@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -15,19 +15,28 @@ namespace ConfigTool.Editor
     {
         private ConfigToolData currentConfig;
         private Vector2 scrollPosition;
-        private string[] toolbarStrings = { "相机点位", "场景物体", "风格配置", "批量导入" };
+        private readonly List<ToolbarPage> toolbarPages = new List<ToolbarPage>();
         private int toolbarIndex = 0;
         private bool showSingleCameraPoints = true;
         private bool showCameraPointLists = true;
         private bool showSingleSceneObjects = true;
         private bool showSceneObjectLists = true;
         private bool showStyleConfig = true;
+        private readonly Dictionary<CameraPointListData, bool> cameraPointListFoldouts = new Dictionary<CameraPointListData, bool>();
+        private readonly Dictionary<SceneObjectListData, bool> sceneObjectListFoldouts = new Dictionary<SceneObjectListData, bool>();
+        private readonly Dictionary<CustomModelData, bool> customModelFoldouts = new Dictionary<CustomModelData, bool>();
+        private Vector2 modelTypeScrollPosition;
+        private List<Type> serializableModelTypes;
+        private string modelTypeSearch = "";
+        private string serializableModelFolderPath = "Assets/DataModel";
 
         private string batchImportParentName = "";
         private string batchImportNamePrefix = "";
         private string batchImportNameSuffix = "";
         private bool batchImportUseHierarchy = true;
-        private BatchImportTarget batchImportTarget = BatchImportTarget.SingleSceneObjects;
+        private BatchImportTarget batchImportTarget = BatchImportTarget.SingleCameraPoints;
+        private int batchImportCameraPointListIndex = 0;
+        private int batchImportSceneObjectListIndex = 0;
 
         private string generatedCodePreview = "";
 
@@ -52,7 +61,7 @@ namespace ConfigTool.Editor
         [MenuItem("ConfigSetting/配置编辑器")]
         public static void ShowWindow()
         {
-            var window = GetWindow<ConfigToolEditor>("数字孪生配置编辑器");
+            var window = GetWindow<ConfigToolEditor>("配置编辑器");
             window.minSize = new Vector2(800, 600);
         }
 
@@ -60,7 +69,7 @@ namespace ConfigTool.Editor
         public static void CreateNewConfiguration()
         {
             string path = EditorUtility.SaveFilePanelInProject(
-                "创建数字孪生配置",
+                "创建新配置",
                 "ConfigToolData",
                 "asset",
                 "请选择配置文件的保存位置"
@@ -77,7 +86,7 @@ namespace ConfigTool.Editor
             }
         }
 
-        [MenuItem("ConfigSetting/生成运行时管理器")]
+        [MenuItem("ConfigSetting/生成配置")]
         public static void GenerateRuntimeManager()
         {
             if (!Selection.activeObject)
@@ -88,7 +97,7 @@ namespace ConfigTool.Editor
 
             if (!(Selection.activeObject is ConfigToolData))
             {
-                EditorUtility.DisplayDialog("错误", "请选择一个数字孪生配置文件", "确定");
+                EditorUtility.DisplayDialog("错误", "请选择一个配置文件", "确定");
                 return;
             }
 
@@ -129,21 +138,9 @@ namespace ConfigTool.Editor
             }
             else
             {
-                switch (toolbarIndex)
-                {
-                    case 0:
-                        DrawCameraPointsSection();
-                        break;
-                    case 1:
-                        DrawSceneObjectsSection();
-                        break;
-                    case 2:
-                        DrawStyleSection();
-                        break;
-                    case 3:
-                        DrawBatchImportSection();
-                        break;
-                }
+                BuildToolbarPages();
+                toolbarIndex = Mathf.Clamp(toolbarIndex, 0, toolbarPages.Count - 1);
+                DrawToolbarPage(toolbarPages[toolbarIndex]);
             }
 
             EditorGUILayout.EndScrollView();
@@ -154,7 +151,7 @@ namespace ConfigTool.Editor
         private void DrawHeader()
         {
             EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("数字孪生配置编辑器", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("配置编辑器", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("当前配置:", GUILayout.Width(100));
             currentConfig = (ConfigToolData)EditorGUILayout.ObjectField(currentConfig, typeof(ConfigToolData), false);
@@ -187,8 +184,63 @@ namespace ConfigTool.Editor
 
         private void DrawToolbar()
         {
-            toolbarIndex = GUILayout.Toolbar(toolbarIndex, toolbarStrings);
+            BuildToolbarPages();
+            string[] pageNames = toolbarPages.Select(page => page.title).ToArray();
+            toolbarIndex = Mathf.Clamp(toolbarIndex, 0, pageNames.Length - 1);
+            toolbarIndex = GUILayout.Toolbar(toolbarIndex, pageNames);
             EditorGUILayout.Space();
+        }
+
+        private void BuildToolbarPages()
+        {
+            toolbarPages.Clear();
+            toolbarPages.Add(new ToolbarPage("相机点位", ToolbarPageType.CameraPoints));
+            toolbarPages.Add(new ToolbarPage("场景物体", ToolbarPageType.SceneObjects));
+            toolbarPages.Add(new ToolbarPage("风格配置", ToolbarPageType.Style));
+            toolbarPages.Add(new ToolbarPage("自定义配置", ToolbarPageType.CustomConfigRoot));
+
+            if (currentConfig != null)
+            {
+                foreach (var config in currentConfig.singleCustomConfigs)
+                {
+                    toolbarPages.Add(new ToolbarPage(string.IsNullOrEmpty(config.configName) ? "未命名配置" : config.configName, ToolbarPageType.SingleCustomConfig, config, null));
+                }
+
+                foreach (var list in currentConfig.customConfigLists)
+                {
+                    toolbarPages.Add(new ToolbarPage(string.IsNullOrEmpty(list.listName) ? "未命名列表" : list.listName, ToolbarPageType.CustomConfigList, null, list));
+                }
+            }
+
+            toolbarPages.Add(new ToolbarPage("批量导入", ToolbarPageType.BatchImport));
+        }
+
+        private void DrawToolbarPage(ToolbarPage page)
+        {
+            switch (page.pageType)
+            {
+                case ToolbarPageType.CameraPoints:
+                    DrawCameraPointsSection();
+                    break;
+                case ToolbarPageType.SceneObjects:
+                    DrawSceneObjectsSection();
+                    break;
+                case ToolbarPageType.Style:
+                    DrawStyleSection();
+                    break;
+                case ToolbarPageType.CustomConfigRoot:
+                    DrawCustomConfigSection();
+                    break;
+                case ToolbarPageType.SingleCustomConfig:
+                    DrawSingleCustomConfigPage(page.singleCustomConfig);
+                    break;
+                case ToolbarPageType.CustomConfigList:
+                    DrawCustomConfigListPage(page.customConfigList);
+                    break;
+                case ToolbarPageType.BatchImport:
+                    DrawBatchImportSection();
+                    break;
+            }
         }
 
         private void DrawNoConfigSelected()
@@ -247,7 +299,7 @@ namespace ConfigTool.Editor
             }
         }
 
-        private void DrawSingleCameraPoint(CameraPointData point, int index)
+        private void DrawSingleCameraPoint(CameraPointData point, int index, Action removeAction = null)
         {
             EditorGUILayout.BeginVertical("box");
 
@@ -255,7 +307,14 @@ namespace ConfigTool.Editor
             point.pointName = EditorGUILayout.TextField("名称", point.pointName);
             if (GUILayout.Button("X", GUILayout.Width(25)))
             {
-                currentConfig.singleCameraPoints.RemoveAt(index);
+                if (removeAction != null)
+                {
+                    removeAction();
+                }
+                else
+                {
+                    currentConfig.singleCameraPoints.RemoveAt(index);
+                }
                 EditorUtility.SetDirty(currentConfig);
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.EndVertical();
@@ -319,16 +378,28 @@ namespace ConfigTool.Editor
             EditorGUILayout.BeginVertical("box");
 
             EditorGUILayout.BeginHorizontal();
+            bool isExpanded = GetCameraPointListFoldout(list);
+            isExpanded = EditorGUILayout.Foldout(isExpanded, "", true);
+            SetCameraPointListFoldout(list, isExpanded);
             list.listName = EditorGUILayout.TextField("列表名称", list.listName);
             if (GUILayout.Button("X", GUILayout.Width(25)))
             {
                 currentConfig.cameraPointLists.RemoveAt(index);
+                cameraPointListFoldouts.Remove(list);
                 EditorUtility.SetDirty(currentConfig);
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.EndVertical();
                 return;
             }
             EditorGUILayout.EndHorizontal();
+
+            if (!isExpanded)
+            {
+                EditorGUILayout.LabelField($"点位数量: {list.cameraPoints.Count}");
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space();
+                return;
+            }
 
             list.listDescription = EditorGUILayout.TextField("描述", list.listDescription);
 
@@ -344,7 +415,8 @@ namespace ConfigTool.Editor
             EditorGUI.indentLevel++;
             for (int j = 0; j < list.cameraPoints.Count; j++)
             {
-                DrawSingleCameraPoint(list.cameraPoints[j], j);
+                int pointIndex = j;
+                DrawSingleCameraPoint(list.cameraPoints[j], pointIndex, () => list.cameraPoints.RemoveAt(pointIndex));
             }
             EditorGUI.indentLevel--;
 
@@ -426,7 +498,7 @@ namespace ConfigTool.Editor
             }
         }
 
-        private void DrawSingleSceneObject(SceneObjectData objData, int index)
+        private void DrawSingleSceneObject(SceneObjectData objData, int index, Action removeAction = null)
         {
             EditorGUILayout.BeginVertical("box");
 
@@ -440,7 +512,14 @@ namespace ConfigTool.Editor
 
             if (GUILayout.Button("X", GUILayout.Width(25)))
             {
-                currentConfig.singleSceneObjects.RemoveAt(index);
+                if (removeAction != null)
+                {
+                    removeAction();
+                }
+                else
+                {
+                    currentConfig.singleSceneObjects.RemoveAt(index);
+                }
                 EditorUtility.SetDirty(currentConfig);
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.EndVertical();
@@ -477,16 +556,28 @@ namespace ConfigTool.Editor
             EditorGUILayout.BeginVertical("box");
 
             EditorGUILayout.BeginHorizontal();
+            bool isExpanded = GetSceneObjectListFoldout(list);
+            isExpanded = EditorGUILayout.Foldout(isExpanded, "", true);
+            SetSceneObjectListFoldout(list, isExpanded);
             list.listName = EditorGUILayout.TextField("列表名称", list.listName);
             if (GUILayout.Button("X", GUILayout.Width(25)))
             {
                 currentConfig.sceneObjectLists.RemoveAt(index);
+                sceneObjectListFoldouts.Remove(list);
                 EditorUtility.SetDirty(currentConfig);
                 EditorGUILayout.EndHorizontal();
                 EditorGUILayout.EndVertical();
                 return;
             }
             EditorGUILayout.EndHorizontal();
+
+            if (!isExpanded)
+            {
+                EditorGUILayout.LabelField($"物体数量: {list.sceneObjects.Count}");
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space();
+                return;
+            }
 
             list.listDescription = EditorGUILayout.TextField("描述", list.listDescription);
 
@@ -506,7 +597,8 @@ namespace ConfigTool.Editor
             EditorGUI.indentLevel++;
             for (int j = 0; j < list.sceneObjects.Count; j++)
             {
-                DrawSingleSceneObject(list.sceneObjects[j], j);
+                int objectIndex = j;
+                DrawSingleSceneObject(list.sceneObjects[j], objectIndex, () => list.sceneObjects.RemoveAt(objectIndex));
             }
             EditorGUI.indentLevel--;
 
@@ -542,11 +634,43 @@ namespace ConfigTool.Editor
             }
         }
 
-        private void DrawCustomFieldsList(List<CustomFieldData> fields, ConfigToolData config, Action addAction)
+        private bool GetCameraPointListFoldout(CameraPointListData list)
+        {
+            if (!cameraPointListFoldouts.TryGetValue(list, out bool isExpanded))
+            {
+                isExpanded = true;
+                cameraPointListFoldouts[list] = isExpanded;
+            }
+
+            return isExpanded;
+        }
+
+        private void SetCameraPointListFoldout(CameraPointListData list, bool isExpanded)
+        {
+            cameraPointListFoldouts[list] = isExpanded;
+        }
+
+        private bool GetSceneObjectListFoldout(SceneObjectListData list)
+        {
+            if (!sceneObjectListFoldouts.TryGetValue(list, out bool isExpanded))
+            {
+                isExpanded = true;
+                sceneObjectListFoldouts[list] = isExpanded;
+            }
+
+            return isExpanded;
+        }
+
+        private void SetSceneObjectListFoldout(SceneObjectListData list, bool isExpanded)
+        {
+            sceneObjectListFoldouts[list] = isExpanded;
+        }
+
+        private void DrawCustomFieldsList(List<CustomFieldData> fields, ConfigToolData config, Action addAction, bool valuesOnly = false)
         {
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("自定义字段:");
-            if (GUILayout.Button("+ 添加字段", GUILayout.Width(80)))
+            EditorGUILayout.LabelField(valuesOnly ? "字段值:" : "自定义字段:");
+            if (!valuesOnly && addAction != null && GUILayout.Button("+ 添加字段", GUILayout.Width(80)))
             {
                 addAction();
                 EditorUtility.SetDirty(config);
@@ -557,8 +681,20 @@ namespace ConfigTool.Editor
             {
                 var field = fields[i];
                 EditorGUILayout.BeginHorizontal("box");
-                field.fieldName = EditorGUILayout.TextField(field.fieldName, GUILayout.Width(120));
-                field.fieldType = (FieldType)EditorGUILayout.EnumPopup(field.fieldType, GUILayout.Width(80));
+                using (new EditorGUI.DisabledScope(valuesOnly))
+                {
+                    field.fieldName = EditorGUILayout.TextField(field.fieldName, GUILayout.Width(120));
+                    FieldType newFieldType = (FieldType)EditorGUILayout.EnumPopup(field.fieldType, GUILayout.Width(100));
+                    if (newFieldType != field.fieldType)
+                    {
+                        field.fieldType = newFieldType;
+                        if (field.fieldType == FieldType.Model)
+                        {
+                            field.modelTypeName = DrawDefaultModelName();
+                            field.modelValue = CreateModelInstance(field.modelTypeName);
+                        }
+                    }
+                }
 
                 if (field.fieldType == FieldType.String)
                 {
@@ -572,8 +708,36 @@ namespace ConfigTool.Editor
                 {
                     field.boolValue = EditorGUILayout.Toggle(field.boolValue);
                 }
+                else if (field.fieldType == FieldType.Vector3)
+                {
+                    field.vector3Value = EditorGUILayout.Vector3Field("", field.vector3Value);
+                }
+                else if (field.fieldType == FieldType.GameObject)
+                {
+                    field.gameObjectValue = (GameObject)EditorGUILayout.ObjectField(field.gameObjectValue, typeof(GameObject), true);
+                }
+                else if (field.fieldType == FieldType.Model)
+                {
+                    string selectedModel = DrawModelSelector("", field.modelTypeName);
+                    if (selectedModel != field.modelTypeName)
+                    {
+                        field.modelTypeName = selectedModel;
+                        field.modelValue = CreateModelInstance(field.modelTypeName);
+                    }
+                    EditorGUILayout.EndHorizontal();
+                    EditorGUI.indentLevel++;
+                    DrawModelInstanceFields(field.modelValue, field.modelTypeName);
+                    EditorGUI.indentLevel--;
+                    if (!valuesOnly && GUILayout.Button("X", GUILayout.Width(25)))
+                    {
+                        fields.RemoveAt(i);
+                        EditorUtility.SetDirty(config);
+                        return;
+                    }
+                    continue;
+                }
 
-                if (GUILayout.Button("X", GUILayout.Width(25)))
+                if (!valuesOnly && GUILayout.Button("X", GUILayout.Width(25)))
                 {
                     fields.RemoveAt(i);
                     EditorUtility.SetDirty(config);
@@ -582,6 +746,472 @@ namespace ConfigTool.Editor
                 }
                 EditorGUILayout.EndHorizontal();
             }
+        }
+
+        private void DrawCustomConfigSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField("自定义配置", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("先定义 Model，再基于 Model 添加单个配置或配置列表。Model 也可以作为字段类型嵌套在其他 Model 中。", MessageType.Info);
+
+            DrawCustomModelDefinitionsSection();
+            EditorGUILayout.Space();
+            DrawSingleCustomConfigsSection();
+            EditorGUILayout.Space();
+            DrawCustomConfigListsSection();
+            EditorGUILayout.Space();
+            DrawSerializableModelImportSection();
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomModelDefinitionsSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"Model 定义: {currentConfig.customModels.Count}", EditorStyles.boldLabel);
+            if (GUILayout.Button("添加 Model", GUILayout.Width(100)))
+            {
+                currentConfig.customModels.Add(new CustomModelData());
+                EditorUtility.SetDirty(currentConfig);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = currentConfig.customModels.Count - 1; i >= 0; i--)
+            {
+                DrawCustomModel(currentConfig.customModels[i], i);
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSingleCustomConfigsSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"单个配置: {currentConfig.singleCustomConfigs.Count}", EditorStyles.boldLabel);
+            if (GUILayout.Button("添加配置", GUILayout.Width(100)))
+            {
+                var config = new CustomConfigData();
+                ApplyModelTemplate(config);
+                currentConfig.singleCustomConfigs.Add(config);
+                EditorUtility.SetDirty(currentConfig);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = currentConfig.singleCustomConfigs.Count - 1; i >= 0; i--)
+            {
+                DrawCustomConfig(currentConfig.singleCustomConfigs[i], () => currentConfig.singleCustomConfigs.RemoveAt(i));
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomConfigListsSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"配置列表: {currentConfig.customConfigLists.Count}", EditorStyles.boldLabel);
+            if (GUILayout.Button("添加列表", GUILayout.Width(100)))
+            {
+                currentConfig.customConfigLists.Add(new CustomConfigListData());
+                EditorUtility.SetDirty(currentConfig);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = currentConfig.customConfigLists.Count - 1; i >= 0; i--)
+            {
+                DrawCustomConfigList(currentConfig.customConfigLists[i], i);
+            }
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomModel(CustomModelData model, int index)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            bool isExpanded = GetCustomModelFoldout(model);
+            isExpanded = EditorGUILayout.Foldout(isExpanded, "", true);
+            SetCustomModelFoldout(model, isExpanded);
+            model.modelName = EditorGUILayout.TextField("Model 名称", model.modelName);
+            if (GUILayout.Button("X", GUILayout.Width(25)))
+            {
+                currentConfig.customModels.RemoveAt(index);
+                customModelFoldouts.Remove(model);
+                EditorUtility.SetDirty(currentConfig);
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                return;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (!isExpanded)
+            {
+                EditorGUILayout.LabelField($"字段数量: {model.fields.Count}");
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space();
+                return;
+            }
+
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.TextField("来源类型", model.sourceTypeName);
+            }
+
+            DrawCustomFieldsList(model.fields, currentConfig, () => model.fields.Add(new CustomFieldData("NewField", FieldType.String)));
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space();
+        }
+
+        private void DrawSingleCustomConfigPage(CustomConfigData config)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField(config == null ? "自定义配置" : config.configName, EditorStyles.boldLabel);
+            if (config == null)
+            {
+                EditorGUILayout.HelpBox("配置不存在，可能已被删除。", MessageType.Warning);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            DrawCustomConfig(config, null);
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomConfigListPage(CustomConfigListData list)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField(list == null ? "自定义配置列表" : list.listName, EditorStyles.boldLabel);
+            if (list == null)
+            {
+                EditorGUILayout.HelpBox("配置列表不存在，可能已被删除。", MessageType.Warning);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            DrawCustomConfigList(list, currentConfig.customConfigLists.IndexOf(list));
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomConfig(CustomConfigData config, Action removeAction)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            config.configName = EditorGUILayout.TextField("配置名称", config.configName);
+            string selectedModel = DrawModelSelector("Model", config.modelTypeName);
+            if (selectedModel != config.modelTypeName)
+            {
+                config.modelTypeName = selectedModel;
+                ApplyModelTemplate(config);
+                EditorUtility.SetDirty(currentConfig);
+            }
+            if (removeAction != null && GUILayout.Button("X", GUILayout.Width(25)))
+            {
+                removeAction();
+                EditorUtility.SetDirty(currentConfig);
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                return;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            DrawModelInstanceFields(config.value, config.modelTypeName);
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space();
+        }
+
+        private void DrawCustomConfigList(CustomConfigListData list, int index)
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.BeginHorizontal();
+            list.listName = EditorGUILayout.TextField("列表名称", list.listName);
+            string selectedModel = DrawModelSelector("Model", list.modelTypeName);
+            if (selectedModel != list.modelTypeName)
+            {
+                list.modelTypeName = selectedModel;
+                foreach (var config in list.configs)
+                {
+                    config.modelTypeName = selectedModel;
+                    ApplyModelTemplate(config);
+                }
+                EditorUtility.SetDirty(currentConfig);
+            }
+            if (index >= 0 && GUILayout.Button("X", GUILayout.Width(25)))
+            {
+                currentConfig.customConfigLists.RemoveAt(index);
+                EditorUtility.SetDirty(currentConfig);
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.EndVertical();
+                return;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            list.listDescription = EditorGUILayout.TextField("描述", list.listDescription);
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"配置数量: {list.configs.Count}");
+            if (GUILayout.Button("添加配置", GUILayout.Width(100)))
+            {
+                var config = new CustomConfigData
+                {
+                    modelTypeName = list.modelTypeName
+                };
+                ApplyModelTemplate(config);
+                list.configs.Add(config);
+                EditorUtility.SetDirty(currentConfig);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUI.indentLevel++;
+            for (int i = 0; i < list.configs.Count; i++)
+            {
+                int configIndex = i;
+                DrawCustomConfig(list.configs[i], () => list.configs.RemoveAt(configIndex));
+            }
+            EditorGUI.indentLevel--;
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space();
+        }
+
+        private string DrawDefaultModelName()
+        {
+            return currentConfig.customModels.Select(model => model.modelName).FirstOrDefault(name => !string.IsNullOrEmpty(name)) ?? "";
+        }
+
+        private string DrawModelSelector(string label, string selectedModel)
+        {
+            string[] modelNames = currentConfig.customModels.Select(model => model.modelName).Where(name => !string.IsNullOrEmpty(name)).ToArray();
+            if (modelNames.Length == 0)
+            {
+                EditorGUILayout.LabelField(label, "请先添加 Model");
+                return "";
+            }
+
+            int selectedIndex = Array.IndexOf(modelNames, selectedModel);
+            selectedIndex = Mathf.Max(0, selectedIndex);
+            selectedIndex = EditorGUILayout.Popup(label, selectedIndex, modelNames, GUILayout.Width(240));
+            return modelNames[selectedIndex];
+        }
+
+        private void ApplyModelTemplate(CustomConfigData config)
+        {
+            CustomModelData model = currentConfig.customModels.FirstOrDefault(item => item.modelName == config.modelTypeName);
+            config.value = new CustomModelInstanceData
+            {
+                fields = model == null ? new List<CustomFieldData>() : CloneFieldTemplates(model.fields)
+            };
+        }
+
+        private List<CustomFieldData> CloneFieldTemplates(List<CustomFieldData> fields)
+        {
+            return fields.Select(CloneFieldTemplate).ToList();
+        }
+
+        private CustomFieldData CloneFieldTemplate(CustomFieldData field)
+        {
+            return new CustomFieldData(field.fieldName, field.fieldType)
+            {
+                modelTypeName = field.modelTypeName,
+                modelValue = field.fieldType == FieldType.Model ? CreateModelInstance(field.modelTypeName) : new CustomModelInstanceData()
+            };
+        }
+
+        private CustomModelInstanceData CreateModelInstance(string modelTypeName)
+        {
+            CustomModelData model = currentConfig.customModels.FirstOrDefault(item => item.modelName == modelTypeName);
+            return new CustomModelInstanceData
+            {
+                fields = model == null ? new List<CustomFieldData>() : CloneFieldTemplates(model.fields)
+            };
+        }
+
+        private void DrawModelInstanceFields(CustomModelInstanceData instance, string modelTypeName)
+        {
+            if (string.IsNullOrEmpty(modelTypeName))
+            {
+                EditorGUILayout.HelpBox("请选择 Model。", MessageType.Info);
+                return;
+            }
+
+            if (instance == null)
+            {
+                return;
+            }
+
+            DrawCustomFieldsList(instance.fields, currentConfig, null, true);
+        }
+
+        private bool GetCustomModelFoldout(CustomModelData model)
+        {
+            if (!customModelFoldouts.TryGetValue(model, out bool isExpanded))
+            {
+                isExpanded = true;
+                customModelFoldouts[model] = isExpanded;
+            }
+
+            return isExpanded;
+        }
+
+        private void SetCustomModelFoldout(CustomModelData model, bool isExpanded)
+        {
+            customModelFoldouts[model] = isExpanded;
+        }
+
+        private void DrawSerializableModelImportSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField("从已有序列化 Model 导入", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            serializableModelFolderPath = EditorGUILayout.TextField("扫描路径", serializableModelFolderPath);
+            if (GUILayout.Button("选择", GUILayout.Width(60)))
+            {
+                string selectedPath = EditorUtility.OpenFolderPanel("选择 Model 文件夹", "Assets", "");
+                if (!string.IsNullOrEmpty(selectedPath) && selectedPath.StartsWith(Application.dataPath))
+                {
+                    serializableModelFolderPath = "Assets" + selectedPath.Substring(Application.dataPath.Length);
+                    RefreshSerializableModelTypes();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+            modelTypeSearch = EditorGUILayout.TextField("搜索类型", modelTypeSearch);
+
+            if (GUILayout.Button("刷新类型列表", GUILayout.Width(120)) || serializableModelTypes == null)
+            {
+                RefreshSerializableModelTypes();
+            }
+
+            if (serializableModelTypes == null || serializableModelTypes.Count == 0)
+            {
+                EditorGUILayout.HelpBox($"未在 {serializableModelFolderPath} 下找到包含支持字段的可序列化类型。", MessageType.Info);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
+            modelTypeScrollPosition = EditorGUILayout.BeginScrollView(modelTypeScrollPosition, GUILayout.Height(160));
+            foreach (Type type in serializableModelTypes)
+            {
+                if (!string.IsNullOrEmpty(modelTypeSearch) && type.FullName.IndexOf(modelTypeSearch, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(type.FullName);
+                if (GUILayout.Button("导入", GUILayout.Width(60)))
+                {
+                    ImportSerializableModel(type);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+
+        private void RefreshSerializableModelTypes()
+        {
+            string normalizedPath = NormalizeAssetFolderPath(serializableModelFolderPath);
+            serializableModelFolderPath = normalizedPath;
+
+            if (!AssetDatabase.IsValidFolder(normalizedPath))
+            {
+                serializableModelTypes = new List<Type>();
+                return;
+            }
+
+            HashSet<string> scriptTypeNames = AssetDatabase.FindAssets("t:MonoScript", new[] { normalizedPath })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Select(path => AssetDatabase.LoadAssetAtPath<MonoScript>(path))
+                .Where(script => script != null && script.GetClass() != null)
+                .Select(script => script.GetClass().FullName)
+                .ToHashSet();
+
+            serializableModelTypes = AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(assembly =>
+                {
+                    try
+                    {
+                        return assembly.GetTypes();
+                    }
+                    catch
+                    {
+                        return Array.Empty<Type>();
+                    }
+                })
+                .Where(type => scriptTypeNames.Contains(type.FullName))
+                .Where(type => type.IsClass && type.IsSerializable && !type.IsAbstract && GetSupportedSerializableFields(type).Count > 0)
+                .OrderBy(type => type.FullName)
+                .ToList();
+        }
+
+        private string NormalizeAssetFolderPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return "Assets/DataModel";
+            }
+
+            string normalized = path.Replace("\\", "/").TrimEnd('/');
+            if (normalized.StartsWith(Application.dataPath))
+            {
+                normalized = "Assets" + normalized.Substring(Application.dataPath.Length);
+            }
+
+            if (!normalized.StartsWith("Assets"))
+            {
+                normalized = "Assets/" + normalized.TrimStart('/');
+            }
+
+            return normalized;
+        }
+
+        private void ImportSerializableModel(Type type)
+        {
+            var model = new CustomModelData
+            {
+                modelName = type.Name,
+                sourceTypeName = type.FullName,
+                fields = GetSupportedSerializableFields(type)
+            };
+            currentConfig.customModels.Add(model);
+            customModelFoldouts[model] = true;
+            EditorUtility.SetDirty(currentConfig);
+        }
+
+        private static List<CustomFieldData> GetSupportedSerializableFields(Type type)
+        {
+            return type.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public)
+                .Select(field => CreateFieldFromType(field.Name, field.FieldType))
+                .Where(field => field != null)
+                .ToList();
+        }
+
+        private static CustomFieldData CreateFieldFromType(string fieldName, Type type)
+        {
+            if (type == typeof(string))
+            {
+                return new CustomFieldData(fieldName, FieldType.String);
+            }
+            if (type == typeof(int))
+            {
+                return new CustomFieldData(fieldName, FieldType.Int);
+            }
+            if (type == typeof(bool))
+            {
+                return new CustomFieldData(fieldName, FieldType.Bool);
+            }
+            if (type == typeof(Vector3))
+            {
+                return new CustomFieldData(fieldName, FieldType.Vector3);
+            }
+            if (type == typeof(GameObject))
+            {
+                return new CustomFieldData(fieldName, FieldType.GameObject);
+            }
+            if (type.IsClass && type.IsSerializable)
+            {
+                return new CustomFieldData(fieldName, FieldType.Model)
+                {
+                    modelTypeName = type.Name
+                };
+            }
+
+            return null;
         }
 
         private void DrawStyleSection()
@@ -642,6 +1272,7 @@ namespace ConfigTool.Editor
             EditorGUILayout.Space();
 
             batchImportTarget = (BatchImportTarget)EditorGUILayout.EnumPopup("导入目标", batchImportTarget);
+            DrawBatchImportTargetOptions();
             EditorGUILayout.Space();
 
             EditorGUILayout.LabelField("命名规则配置:", EditorStyles.boldLabel);
@@ -672,6 +1303,60 @@ namespace ConfigTool.Editor
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawBatchImportTargetOptions()
+        {
+            if (batchImportTarget == BatchImportTarget.CameraPointList)
+            {
+                DrawBatchImportCameraPointListSelector();
+            }
+            else if (batchImportTarget == BatchImportTarget.SceneObjectList)
+            {
+                DrawBatchImportSceneObjectListSelector();
+            }
+        }
+
+        private void DrawBatchImportCameraPointListSelector()
+        {
+            if (currentConfig.cameraPointLists.Count == 0)
+            {
+                EditorGUILayout.HelpBox("当前没有相机点位列表，请先创建一个列表，或点击下方按钮自动创建。", MessageType.Info);
+                if (GUILayout.Button("创建相机点位列表", GUILayout.Width(140)))
+                {
+                    currentConfig.cameraPointLists.Add(new CameraPointListData("ImportedCameraPoints", "批量导入的相机点位"));
+                    batchImportCameraPointListIndex = 0;
+                    EditorUtility.SetDirty(currentConfig);
+                }
+                return;
+            }
+
+            batchImportCameraPointListIndex = Mathf.Clamp(batchImportCameraPointListIndex, 0, currentConfig.cameraPointLists.Count - 1);
+            string[] listNames = currentConfig.cameraPointLists
+                .Select((list, index) => string.IsNullOrEmpty(list.listName) ? $"未命名相机点位列表 {index + 1}" : list.listName)
+                .ToArray();
+            batchImportCameraPointListIndex = EditorGUILayout.Popup("相机点位列表", batchImportCameraPointListIndex, listNames);
+        }
+
+        private void DrawBatchImportSceneObjectListSelector()
+        {
+            if (currentConfig.sceneObjectLists.Count == 0)
+            {
+                EditorGUILayout.HelpBox("当前没有场景物体列表，请先创建一个列表，或点击下方按钮自动创建。", MessageType.Info);
+                if (GUILayout.Button("创建场景物体列表", GUILayout.Width(140)))
+                {
+                    currentConfig.sceneObjectLists.Add(new SceneObjectListData("ImportedObjects", "批量导入的物体"));
+                    batchImportSceneObjectListIndex = 0;
+                    EditorUtility.SetDirty(currentConfig);
+                }
+                return;
+            }
+
+            batchImportSceneObjectListIndex = Mathf.Clamp(batchImportSceneObjectListIndex, 0, currentConfig.sceneObjectLists.Count - 1);
+            string[] listNames = currentConfig.sceneObjectLists
+                .Select((list, index) => string.IsNullOrEmpty(list.listName) ? $"未命名场景物体列表 {index + 1}" : list.listName)
+                .ToArray();
+            batchImportSceneObjectListIndex = EditorGUILayout.Popup("场景物体列表", batchImportSceneObjectListIndex, listNames);
         }
 
         private void DrawFooter()
@@ -744,21 +1429,7 @@ namespace ConfigTool.Editor
                 }
             }
 
-            foreach (GameObject obj in importedObjects)
-            {
-                if (batchImportTarget == BatchImportTarget.SingleSceneObjects)
-                {
-                    currentConfig.singleSceneObjects.Add(new SceneObjectData(obj, GenerateObjectId(obj)));
-                }
-                else if (batchImportTarget == BatchImportTarget.SceneObjectList1)
-                {
-                    if (currentConfig.sceneObjectLists.Count == 0)
-                    {
-                        currentConfig.sceneObjectLists.Add(new SceneObjectListData("ImportedObjects", "批量导入的物体"));
-                    }
-                    currentConfig.sceneObjectLists[0].sceneObjects.Add(new SceneObjectData(obj, GenerateObjectId(obj)));
-                }
-            }
+            ImportObjectsToSelectedTarget(importedObjects);
 
             EditorUtility.SetDirty(currentConfig);
             AssetDatabase.SaveAssets();
@@ -780,6 +1451,81 @@ namespace ConfigTool.Editor
             return children;
         }
 
+        private void ImportObjectsToSelectedTarget(List<GameObject> importedObjects)
+        {
+            if (batchImportTarget == BatchImportTarget.CameraPointList)
+            {
+                EnsureCameraPointListExists();
+            }
+            else if (batchImportTarget == BatchImportTarget.SceneObjectList)
+            {
+                EnsureSceneObjectListExists();
+            }
+
+            foreach (GameObject obj in importedObjects)
+            {
+                if (obj == null)
+                {
+                    continue;
+                }
+
+                switch (batchImportTarget)
+                {
+                    case BatchImportTarget.SingleCameraPoints:
+                        currentConfig.singleCameraPoints.Add(CreateCameraPointData(obj));
+                        break;
+                    case BatchImportTarget.CameraPointList:
+                        currentConfig.cameraPointLists[batchImportCameraPointListIndex].cameraPoints.Add(CreateCameraPointData(obj));
+                        break;
+                    case BatchImportTarget.SingleSceneObjects:
+                        currentConfig.singleSceneObjects.Add(CreateSceneObjectData(obj));
+                        break;
+                    case BatchImportTarget.SceneObjectList:
+                        currentConfig.sceneObjectLists[batchImportSceneObjectListIndex].sceneObjects.Add(CreateSceneObjectData(obj));
+                        break;
+                }
+            }
+        }
+
+        private void EnsureCameraPointListExists()
+        {
+            if (currentConfig.cameraPointLists.Count == 0)
+            {
+                currentConfig.cameraPointLists.Add(new CameraPointListData("ImportedCameraPoints", "批量导入的相机点位"));
+                batchImportCameraPointListIndex = 0;
+            }
+
+            batchImportCameraPointListIndex = Mathf.Clamp(batchImportCameraPointListIndex, 0, currentConfig.cameraPointLists.Count - 1);
+        }
+
+        private void EnsureSceneObjectListExists()
+        {
+            if (currentConfig.sceneObjectLists.Count == 0)
+            {
+                currentConfig.sceneObjectLists.Add(new SceneObjectListData("ImportedObjects", "批量导入的物体"));
+                batchImportSceneObjectListIndex = 0;
+            }
+
+            batchImportSceneObjectListIndex = Mathf.Clamp(batchImportSceneObjectListIndex, 0, currentConfig.sceneObjectLists.Count - 1);
+        }
+
+        private CameraPointData CreateCameraPointData(GameObject obj)
+        {
+            Vector3 targetPosition = obj.transform.position + obj.transform.forward;
+            Camera camera = obj.GetComponent<Camera>();
+            if (camera != null)
+            {
+                targetPosition = obj.transform.position + obj.transform.forward * Mathf.Max(camera.farClipPlane * 0.1f, 1f);
+            }
+
+            return new CameraPointData(obj.name, obj.transform.position, targetPosition);
+        }
+
+        private SceneObjectData CreateSceneObjectData(GameObject obj)
+        {
+            return new SceneObjectData(obj, GenerateObjectId(obj));
+        }
+
         private bool MatchesNameFilter(string objectName)
         {
             bool prefixMatch = string.IsNullOrEmpty(batchImportNamePrefix) || objectName.StartsWith(batchImportNamePrefix);
@@ -797,16 +1543,74 @@ namespace ConfigTool.Editor
             return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
-        private void AppendCustomFieldAssignment(StringBuilder sb, string targetExpression, CustomFieldData field)
+        private string GetGeneratedFieldTypeName(FieldType fieldType)
+        {
+            switch (fieldType)
+            {
+                case FieldType.String:
+                    return "string";
+                case FieldType.Int:
+                    return "int";
+                case FieldType.Bool:
+                    return "bool";
+                case FieldType.Vector3:
+                    return "Vector3";
+                case FieldType.GameObject:
+                    return "GameObject";
+                case FieldType.Model:
+                    return "object";
+                default:
+                    return "string";
+            }
+        }
+
+        private string GetUniqueGeneratedName(string requestedName, HashSet<string> usedNames)
+        {
+            string baseName = string.IsNullOrEmpty(requestedName) ? "GeneratedItem" : requestedName;
+            string uniqueName = baseName;
+            int suffix = 2;
+            while (usedNames.Contains(uniqueName))
+            {
+                uniqueName = baseName + suffix;
+                suffix++;
+            }
+
+            usedNames.Add(uniqueName);
+            return uniqueName;
+        }
+
+        private string GetCustomFieldValueProperty(FieldType fieldType)
+        {
+            switch (fieldType)
+            {
+                case FieldType.String:
+                    return "stringValue";
+                case FieldType.Int:
+                    return "intValue";
+                case FieldType.Bool:
+                    return "boolValue";
+                case FieldType.Vector3:
+                    return "vector3Value";
+                case FieldType.GameObject:
+                    return "gameObjectValue";
+                case FieldType.Model:
+                    return "modelValue";
+                default:
+                    return "stringValue";
+            }
+        }
+
+        private void AppendCustomFieldAssignment(StringBuilder sb, string targetExpression, CustomFieldData field, string sourceFieldsExpression = "source.customFields")
         {
             string safeFieldName = GetSafeFieldName(field.fieldName);
             string sourceFieldName = EscapeStringLiteral(field.fieldName);
-            string valueProperty = field.fieldType == FieldType.String ? "stringValue" : field.fieldType == FieldType.Int ? "intValue" : "boolValue";
-            sb.AppendLine($"                var {safeFieldName}Field = source.customFields.Find(item => item.fieldName == \"{sourceFieldName}\");");
-            sb.AppendLine($"                if ({safeFieldName}Field != null)");
-            sb.AppendLine("                {");
-            sb.AppendLine($"                    {targetExpression}.{safeFieldName} = {safeFieldName}Field.{valueProperty};");
-            sb.AppendLine("                }");
+            string valueProperty = GetCustomFieldValueProperty(field.fieldType);
+            string indent = targetExpression.Substring(0, targetExpression.Length - targetExpression.TrimStart().Length);
+            sb.AppendLine($"{indent}var {safeFieldName}Field = {sourceFieldsExpression}.Find(item => item.fieldName == \"{sourceFieldName}\");");
+            sb.AppendLine($"{indent}if ({safeFieldName}Field != null)");
+            sb.AppendLine($"{indent}{{");
+            sb.AppendLine($"{indent}    {targetExpression.TrimStart()}.{safeFieldName} = {safeFieldName}Field.{valueProperty};");
+            sb.AppendLine($"{indent}}}");
         }
 
         private void GenerateCodePreview(string className = null)
@@ -825,7 +1629,7 @@ namespace ConfigTool.Editor
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("/// <summary>");
-            sb.AppendLine($"/// 数字孪生运行时管理器 - 自动生成");
+            sb.AppendLine($"/// 配置工具 - 自动生成");
             sb.AppendLine($"/// 项目: {currentConfig.projectName}");
             sb.AppendLine($"/// 版本: {currentConfig.version}");
             sb.AppendLine("/// </summary>");
@@ -839,6 +1643,15 @@ namespace ConfigTool.Editor
             sb.AppendLine($"    public class {className} : MonoBehaviour");
             sb.AppendLine("    {");
 
+            var usedTypeNames = new HashSet<string> { className, "CameraPoint", "SceneObject" };
+            var cameraPointListTypeNames = new Dictionary<CameraPointListData, string>();
+            var sceneObjectListTypeNames = new Dictionary<SceneObjectListData, string>();
+            var customModelTypeNames = new Dictionary<CustomModelData, string>();
+            var usedFieldNames = new HashSet<string> { "cameraPoints", "sceneObjects" };
+            var cameraPointListFieldNames = new Dictionary<CameraPointListData, string>();
+            var sceneObjectListFieldNames = new Dictionary<SceneObjectListData, string>();
+            var customModelFieldNames = new Dictionary<CustomModelData, string>();
+
             if (true)
             {
                 sb.AppendLine("        [System.Serializable]");
@@ -849,7 +1662,7 @@ namespace ConfigTool.Editor
                 sb.AppendLine("            public Vector3 targetPosition;");
                 foreach (var field in currentConfig.singleCameraPoints.Count > 0 ? currentConfig.singleCameraPoints[0].customFields : new List<CustomFieldData>())
                 {
-                    string typeName = field.fieldType == FieldType.String ? "string" : (field.fieldType == FieldType.Int ? "int" : "bool");
+                    string typeName = GetGeneratedFieldTypeName(field.fieldType);
                     sb.AppendLine($"            public {typeName} {GetSafeFieldName(field.fieldName)};");
                 }
                 sb.AppendLine("        }");
@@ -859,7 +1672,8 @@ namespace ConfigTool.Editor
 
             foreach (var list in currentConfig.cameraPointLists)
             {
-                string listClassName = GetSafeClassName(list.listName);
+                string listClassName = GetUniqueGeneratedName(GetSafeClassName(list.listName), usedTypeNames);
+                cameraPointListTypeNames[list] = listClassName;
                 sb.AppendLine("        [System.Serializable]");
                 sb.AppendLine($"        public class {listClassName}");
                 sb.AppendLine("        {");
@@ -873,7 +1687,7 @@ namespace ConfigTool.Editor
                     sb.AppendLine("                public Vector3 targetPosition;");
                     foreach (var field in list.cameraPoints.Count > 0 ? list.cameraPoints[0].customFields : new List<CustomFieldData>())
                     {
-                        string typeName = field.fieldType == FieldType.String ? "string" : (field.fieldType == FieldType.Int ? "int" : "bool");
+                        string typeName = GetGeneratedFieldTypeName(field.fieldType);
                         sb.AppendLine($"                public {typeName} {GetSafeFieldName(field.fieldName)};");
                     }
                     sb.AppendLine("            }");
@@ -881,7 +1695,9 @@ namespace ConfigTool.Editor
                 sb.AppendLine($"            public List<Point> points = new List<Point>();");
                 sb.AppendLine("        }");
                 sb.AppendLine();
-                sb.AppendLine($"        public List<{listClassName}> {GetSafeFieldName(list.listName)} = new List<{listClassName}>();");
+                string listFieldName = GetUniqueGeneratedName(GetSafeFieldName(list.listName), usedFieldNames);
+                cameraPointListFieldNames[list] = listFieldName;
+                sb.AppendLine($"        public List<{listClassName}> {listFieldName} = new List<{listClassName}>();");
             }
 
             if (true)
@@ -894,7 +1710,7 @@ namespace ConfigTool.Editor
                 sb.AppendLine("            public GameObject referenceObject;");
                 foreach (var field in currentConfig.singleSceneObjects.Count > 0 ? currentConfig.singleSceneObjects[0].customFields : new List<CustomFieldData>())
                 {
-                    string typeName = field.fieldType == FieldType.String ? "string" : (field.fieldType == FieldType.Int ? "int" : "bool");
+                    string typeName = GetGeneratedFieldTypeName(field.fieldType);
                     sb.AppendLine($"            public {typeName} {GetSafeFieldName(field.fieldName)};");
                 }
                 sb.AppendLine("        }");
@@ -904,7 +1720,8 @@ namespace ConfigTool.Editor
 
             foreach (var list in currentConfig.sceneObjectLists)
             {
-                string listClassName = GetSafeClassName(list.listName);
+                string listClassName = GetUniqueGeneratedName(GetSafeClassName(list.listName), usedTypeNames);
+                sceneObjectListTypeNames[list] = listClassName;
                 sb.AppendLine("        [System.Serializable]");
                 sb.AppendLine($"        public class {listClassName}");
                 sb.AppendLine("        {");
@@ -918,7 +1735,7 @@ namespace ConfigTool.Editor
                     sb.AppendLine("                public GameObject referenceObject;");
                     foreach (var field in list.sceneObjects.Count > 0 ? list.sceneObjects[0].customFields : new List<CustomFieldData>())
                     {
-                        string typeName = field.fieldType == FieldType.String ? "string" : (field.fieldType == FieldType.Int ? "int" : "bool");
+                        string typeName = GetGeneratedFieldTypeName(field.fieldType);
                         sb.AppendLine($"                public {typeName} {GetSafeFieldName(field.fieldName)};");
                     }
                     sb.AppendLine("            }");
@@ -926,7 +1743,27 @@ namespace ConfigTool.Editor
                 sb.AppendLine($"            public List<Object> objects = new List<Object>();");
                 sb.AppendLine("        }");
                 sb.AppendLine();
-                sb.AppendLine($"        public List<{listClassName}> {GetSafeFieldName(list.listName)} = new List<{listClassName}>();");
+                string listFieldName = GetUniqueGeneratedName(GetSafeFieldName(list.listName), usedFieldNames);
+                sceneObjectListFieldNames[list] = listFieldName;
+                sb.AppendLine($"        public List<{listClassName}> {listFieldName} = new List<{listClassName}>();");
+            }
+
+            foreach (var model in currentConfig.customModels)
+            {
+                string modelClassName = GetUniqueGeneratedName(GetSafeClassName(model.modelName), usedTypeNames);
+                customModelTypeNames[model] = modelClassName;
+                sb.AppendLine("        [System.Serializable]");
+                sb.AppendLine($"        public class {modelClassName}");
+                sb.AppendLine("        {");
+                foreach (var field in model.fields)
+                {
+                    sb.AppendLine($"            public {GetGeneratedFieldTypeName(field.fieldType)} {GetSafeFieldName(field.fieldName)};");
+                }
+                sb.AppendLine("        }");
+                sb.AppendLine();
+                string modelFieldName = GetUniqueGeneratedName(GetSafeFieldName(model.modelName), usedFieldNames);
+                customModelFieldNames[model] = modelFieldName;
+                sb.AppendLine($"        public List<{modelClassName}> {modelFieldName} = new List<{modelClassName}>();");
             }
 
             sb.AppendLine();
@@ -958,8 +1795,8 @@ namespace ConfigTool.Editor
             sb.AppendLine();
             foreach (var list in currentConfig.cameraPointLists)
             {
-                string listClassName = GetSafeClassName(list.listName);
-                string fieldName = GetSafeFieldName(list.listName);
+                string listClassName = cameraPointListTypeNames[list];
+                string fieldName = cameraPointListFieldNames[list];
                 sb.AppendLine($"            {fieldName}.Clear();");
                 sb.AppendLine("            {");
                 sb.AppendLine($"                var generatedList = new {listClassName}();");
@@ -999,8 +1836,8 @@ namespace ConfigTool.Editor
             sb.AppendLine();
             foreach (var list in currentConfig.sceneObjectLists)
             {
-                string listClassName = GetSafeClassName(list.listName);
-                string fieldName = GetSafeFieldName(list.listName);
+                string listClassName = sceneObjectListTypeNames[list];
+                string fieldName = sceneObjectListFieldNames[list];
                 sb.AppendLine($"            {fieldName}.Clear();");
                 sb.AppendLine("            {");
                 sb.AppendLine($"                var generatedList = new {listClassName}();");
@@ -1021,6 +1858,25 @@ namespace ConfigTool.Editor
                 sb.AppendLine("                    }");
                 sb.AppendLine("                }");
                 sb.AppendLine($"                {fieldName}.Add(generatedList);");
+                sb.AppendLine("            }");
+                sb.AppendLine();
+            }
+            foreach (var model in currentConfig.customModels)
+            {
+                string modelClassName = customModelTypeNames[model];
+                string fieldName = customModelFieldNames[model];
+                sb.AppendLine($"            {fieldName}.Clear();");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                var sourceModel = buffer.customModels.Find(item => item.modelName == \"{EscapeStringLiteral(model.modelName)}\");");
+                sb.AppendLine("                if (sourceModel != null)");
+                sb.AppendLine("                {");
+                sb.AppendLine($"                    var item = new {modelClassName}();");
+                foreach (var field in model.fields)
+                {
+                    AppendCustomFieldAssignment(sb, "                    item", field, "sourceModel.fields");
+                }
+                sb.AppendLine($"                    {fieldName}.Add(item);");
+                sb.AppendLine("                }");
                 sb.AppendLine("            }");
                 sb.AppendLine();
             }
@@ -1068,7 +1924,7 @@ namespace ConfigTool.Editor
                 Directory.CreateDirectory(directory);
             }
 
-            string pendingObjectName = "Temp_" + className;
+            string pendingObjectName = "Temp_" + className + "_" + Guid.NewGuid().ToString("N");
             GameObject tempObj = new GameObject(pendingObjectName);
             GeneratedConfigBuffer buffer = tempObj.AddComponent<GeneratedConfigBuffer>();
             buffer.Capture(currentConfig);
@@ -1089,93 +1945,7 @@ namespace ConfigTool.Editor
             AssetDatabase.Refresh();
             AssetDatabase.SaveAssets();
 
-            // 创建临时物体，保存场景对象引用
-            string tempObjectName = "Temp_" + className;
-            GameObject legacyTempObj = GameObject.Find(tempObjectName);
-            if (legacyTempObj != null && legacyTempObj.GetComponent<GeneratedConfigBuffer>() == null)
-            {
-                legacyTempObj.AddComponent<GeneratedConfigBuffer>().Capture(currentConfig);
-            }
-
-            SessionState.SetBool(PendingGenerateSavePathKey + ".Active", true);
-            SessionState.SetString(PendingGenerateSavePathKey, savePath);
-            SessionState.SetString(PendingGenerateConfigPathKey, assetPath);
-            SessionState.SetString(PendingGenerateClassNameKey, className);
-            SessionState.SetString(PendingGenerateObjectNameKey, pendingObjectName);
-            SessionState.SetInt(PendingGenerateRetryCountKey, 0);
-
-            // 等待编译完成
-            EditorApplication.CallbackFunction callback = null;
-            callback = () =>
-            {
-                if (!EditorApplication.isCompiling)
-                {
-                    EditorApplication.update -= callback;
-                    if (SessionState.GetBool(PendingGenerateSavePathKey + ".Active", false))
-                    {
-                        EditorApplication.delayCall += CompletePendingGenerate;
-                        return;
-                    }
-
-                    GameObject managerObj = GameObject.Find(tempObjectName);
-                    if (managerObj != null)
-                    {
-                        managerObj.name = className;
-
-                        // 尝试添加组件
-                        Component manager = null;
-
-                        // 方法1: 直接通过字符串添加
-                        try
-                        {
-                            MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(savePath);
-                            Type scriptType = script != null ? script.GetClass() : null;
-                            if (scriptType != null && typeof(Component).IsAssignableFrom(scriptType))
-                            {
-                                manager = managerObj.AddComponent(scriptType);
-                            }
-                        }
-                        catch (System.Exception ex)
-                        {
-                            Debug.LogWarning($"方法1失败: {ex.Message}");
-                        }
-
-                        // 方法2: 通过类型加载
-                        if (manager == null)
-                        {
-                            try
-                            {
-                                MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(savePath);
-                                if (script != null)
-                                {
-                                    System.Type scriptType = script.GetClass();
-                                    if (scriptType != null)
-                                    {
-                                        manager = managerObj.AddComponent(scriptType);
-                                    }
-                                }
-                            }
-                            catch (System.Exception ex)
-                            {
-                                Debug.LogWarning($"方法2失败: {ex.Message}");
-                            }
-                        }
-
-                        if (manager == null)
-                        {
-                            EditorUtility.DisplayDialog("警告", "脚本已生成，但组件未能自动添加到物体上。\n请手动将生成的脚本组件添加到物体上。", "确定");
-                        }
-                        else
-                        {
-                            Selection.activeGameObject = managerObj;
-                            EditorGUIUtility.PingObject(managerObj);
-                            EditorUtility.DisplayDialog("成功", $"运行时管理器已生成并添加到场景中\n脚本保存在: {savePath}", "确定");
-                        }
-                    }
-                }
-            };
-
-            EditorApplication.update += callback;
+            EditorApplication.delayCall += CompletePendingGenerate;
         }
 
         private static void CompletePendingGenerate()
@@ -1214,7 +1984,8 @@ namespace ConfigTool.Editor
                 if (retryCount >= PendingGenerateMaxRetries)
                 {
                     ClearPendingGenerate();
-                    EditorUtility.DisplayDialog("警告", "脚本已生成，但 Unity 未能解析生成的组件类型。请检查 Console 是否有编译错误，然后手动将生成脚本添加到物体上。", "确定");
+                    DestroyImmediate(managerObj);
+                    EditorUtility.DisplayDialog("警告", $"脚本已生成，但 Unity 未能解析生成的组件类型。请检查 Console 是否有编译错误。\n脚本保存位置: {savePath}", "确定");
                     return;
                 }
 
@@ -1233,7 +2004,7 @@ namespace ConfigTool.Editor
             Selection.activeGameObject = managerObj;
             EditorGUIUtility.PingObject(managerObj);
             ClearPendingGenerate();
-            EditorUtility.DisplayDialog("成功", $"运行时管理器已生成并添加到场景中\n脚本保存位置: {savePath}", "确定");
+            EditorUtility.DisplayDialog("成功", $"配置已生成并添加到场景中\n脚本保存位置: {savePath}", "确定");
         }
 
         private static Component AddGeneratedComponent(GameObject managerObj, string savePath)
@@ -1355,11 +2126,43 @@ namespace ConfigTool.Editor
             return result;
         }
 
+        private enum ToolbarPageType
+        {
+            CameraPoints,
+            SceneObjects,
+            Style,
+            CustomConfigRoot,
+            SingleCustomConfig,
+            CustomConfigList,
+            BatchImport
+        }
+
+        private class ToolbarPage
+        {
+            public string title;
+            public ToolbarPageType pageType;
+            public CustomConfigData singleCustomConfig;
+            public CustomConfigListData customConfigList;
+
+            public ToolbarPage(string title, ToolbarPageType pageType, CustomConfigData singleCustomConfig = null, CustomConfigListData customConfigList = null)
+            {
+                this.title = title;
+                this.pageType = pageType;
+                this.singleCustomConfig = singleCustomConfig;
+                this.customConfigList = customConfigList;
+            }
+        }
+
         private enum BatchImportTarget
         {
+            [InspectorName("相机点位")]
+            SingleCameraPoints,
+            [InspectorName("相机点位列表")]
+            CameraPointList,
+            [InspectorName("场景物体")]
             SingleSceneObjects,
-            SceneObjectList1,
-            SceneObjectList2
+            [InspectorName("场景物体列表")]
+            SceneObjectList
         }
     }
 }

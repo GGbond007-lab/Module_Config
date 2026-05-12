@@ -22,6 +22,9 @@ namespace ConfigTool.Editor
             var stringValueProp = property.FindPropertyRelative("stringValue");
             var intValueProp = property.FindPropertyRelative("intValue");
             var boolValueProp = property.FindPropertyRelative("boolValue");
+            var vector3ValueProp = property.FindPropertyRelative("vector3Value");
+            var gameObjectValueProp = property.FindPropertyRelative("gameObjectValue");
+            var modelTypeNameProp = property.FindPropertyRelative("modelTypeName");
 
             EditorGUI.PropertyField(fieldNameRect, fieldNameProp, GUIContent.none);
             EditorGUI.PropertyField(typeRect, fieldTypeProp, GUIContent.none);
@@ -40,6 +43,18 @@ namespace ConfigTool.Editor
             else if (fieldType == FieldType.Bool)
             {
                 EditorGUI.PropertyField(valueRect, boolValueProp, GUIContent.none);
+            }
+            else if (fieldType == FieldType.Vector3)
+            {
+                EditorGUI.PropertyField(valueRect, vector3ValueProp, GUIContent.none);
+            }
+            else if (fieldType == FieldType.GameObject)
+            {
+                EditorGUI.PropertyField(valueRect, gameObjectValueProp, GUIContent.none);
+            }
+            else if (fieldType == FieldType.Model)
+            {
+                EditorGUI.PropertyField(valueRect, modelTypeNameProp, GUIContent.none);
             }
 
             if (EditorGUI.EndChangeCheck())

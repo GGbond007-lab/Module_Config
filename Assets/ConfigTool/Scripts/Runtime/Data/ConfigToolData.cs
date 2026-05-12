@@ -27,6 +27,11 @@ namespace ConfigTool
         [Header("风格配置")]
         public List<StyleMaterialData> styleMaterials = new List<StyleMaterialData>();
 
+        [Header("自定义配置")]
+        public List<CustomModelData> customModels = new List<CustomModelData>();
+        public List<CustomConfigData> singleCustomConfigs = new List<CustomConfigData>();
+        public List<CustomConfigListData> customConfigLists = new List<CustomConfigListData>();
+
         public void Reset()
         {
             singleCameraPoints.Clear();
@@ -34,6 +39,9 @@ namespace ConfigTool
             singleSceneObjects.Clear();
             sceneObjectLists.Clear();
             styleMaterials.Clear();
+            customModels.Clear();
+            singleCustomConfigs.Clear();
+            customConfigLists.Clear();
         }
     }
 

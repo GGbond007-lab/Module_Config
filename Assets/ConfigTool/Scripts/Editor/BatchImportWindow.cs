@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -13,7 +13,9 @@ namespace ConfigTool.Editor
         private string parentObjectName = "";
         private bool useParentObject = false;
         private ImportMode importMode = ImportMode.ByNameFilter;
-        private ObjectReferenceType referenceType = ObjectReferenceType.ByReference;
+        private BatchImportTarget importTarget = BatchImportTarget.SingleCameraPoints;
+        private int cameraPointListIndex = 0;
+        private int sceneObjectListIndex = 0;
 
         private List<GameObject> previewObjects = new List<GameObject>();
 
@@ -41,9 +43,6 @@ namespace ConfigTool.Editor
                 case ImportMode.ByParentObject:
                     DrawParentObjectMode();
                     break;
-                case ImportMode.ByComponent:
-                    DrawComponentMode();
-                    break;
             }
 
             EditorGUILayout.Space();
@@ -61,7 +60,9 @@ namespace ConfigTool.Editor
 
             EditorGUILayout.Space();
 
-            referenceType = (ObjectReferenceType)EditorGUILayout.EnumPopup("引用方式", referenceType);
+            ConfigToolData selectedConfig = Selection.activeObject as ConfigToolData;
+            importTarget = (BatchImportTarget)EditorGUILayout.EnumPopup("导入目标", importTarget);
+            DrawImportTargetOptions(selectedConfig);
 
             EditorGUILayout.Space();
 
@@ -73,6 +74,62 @@ namespace ConfigTool.Editor
             GUI.enabled = true;
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawImportTargetOptions(ConfigToolData config)
+        {
+            if (config == null)
+            {
+                EditorGUILayout.HelpBox("请选择一个配置文件，或导入时在弹窗中选择。列表目标需要先选中配置文件才能同步显示列表。", MessageType.Info);
+                return;
+            }
+
+            if (importTarget == BatchImportTarget.CameraPointList)
+            {
+                DrawCameraPointListSelector(config);
+            }
+            else if (importTarget == BatchImportTarget.SceneObjectList)
+            {
+                DrawSceneObjectListSelector(config);
+            }
+        }
+
+        private void DrawCameraPointListSelector(ConfigToolData config)
+        {
+            if (config.cameraPointLists.Count == 0)
+            {
+                EditorGUILayout.HelpBox("当前配置没有相机点位列表，导入时会自动创建 ImportedCameraPoints。", MessageType.Info);
+                return;
+            }
+
+            cameraPointListIndex = Mathf.Clamp(cameraPointListIndex, 0, config.cameraPointLists.Count - 1);
+            string[] listNames = new string[config.cameraPointLists.Count];
+            for (int i = 0; i < config.cameraPointLists.Count; i++)
+            {
+                string listName = config.cameraPointLists[i].listName;
+                listNames[i] = string.IsNullOrEmpty(listName) ? $"未命名相机点位列表 {i + 1}" : listName;
+            }
+
+            cameraPointListIndex = EditorGUILayout.Popup("相机点位列表", cameraPointListIndex, listNames);
+        }
+
+        private void DrawSceneObjectListSelector(ConfigToolData config)
+        {
+            if (config.sceneObjectLists.Count == 0)
+            {
+                EditorGUILayout.HelpBox("当前配置没有场景物体列表，导入时会自动创建 ImportedObjects。", MessageType.Info);
+                return;
+            }
+
+            sceneObjectListIndex = Mathf.Clamp(sceneObjectListIndex, 0, config.sceneObjectLists.Count - 1);
+            string[] listNames = new string[config.sceneObjectLists.Count];
+            for (int i = 0; i < config.sceneObjectLists.Count; i++)
+            {
+                string listName = config.sceneObjectLists[i].listName;
+                listNames[i] = string.IsNullOrEmpty(listName) ? $"未命名场景物体列表 {i + 1}" : listName;
+            }
+
+            sceneObjectListIndex = EditorGUILayout.Popup("场景物体列表", sceneObjectListIndex, listNames);
         }
 
         private void DrawNameFilterMode()
@@ -103,20 +160,6 @@ namespace ConfigTool.Editor
             EditorGUILayout.LabelField("2. 如果禁用，将导入场景中所有匹配的对象");
             EditorGUILayout.LabelField("3. 名称过滤同时生效");
             EditorGUILayout.EndVertical();
-        }
-
-        private void DrawComponentMode()
-        {
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("组件模式说明:", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("1. 可以按组件类型筛选对象");
-            EditorGUILayout.LabelField("2. 支持任何 Unity 组件类型");
-            EditorGUILayout.LabelField("3. 结合名称过滤可以获得精确结果");
-            EditorGUILayout.EndVertical();
-
-            EditorGUILayout.Space();
-            importPrefix = EditorGUILayout.TextField("名称前缀", importPrefix);
-            importSuffix = EditorGUILayout.TextField("名称后缀", importSuffix);
         }
 
         private void DrawPreviewList()
@@ -225,14 +268,7 @@ namespace ConfigTool.Editor
                 }
             }
 
-            foreach (GameObject obj in previewObjects)
-            {
-                if (obj == null) continue;
-
-                SceneObjectData objData = new SceneObjectData(obj);
-                objData.objectId = GenerateObjectId(obj);
-                config.singleSceneObjects.Add(objData);
-            }
+            ImportObjectsToTarget(config);
 
             EditorUtility.SetDirty(config);
             AssetDatabase.SaveAssets();
@@ -245,18 +281,97 @@ namespace ConfigTool.Editor
             return $"{obj.name}_{obj.GetInstanceID()}";
         }
 
+        private void ImportObjectsToTarget(ConfigToolData config)
+        {
+            if (importTarget == BatchImportTarget.CameraPointList)
+            {
+                EnsureCameraPointListExists(config);
+            }
+            else if (importTarget == BatchImportTarget.SceneObjectList)
+            {
+                EnsureSceneObjectListExists(config);
+            }
+
+            foreach (GameObject obj in previewObjects)
+            {
+                if (obj == null)
+                {
+                    continue;
+                }
+
+                switch (importTarget)
+                {
+                    case BatchImportTarget.SingleCameraPoints:
+                        config.singleCameraPoints.Add(CreateCameraPointData(obj));
+                        break;
+                    case BatchImportTarget.CameraPointList:
+                        config.cameraPointLists[cameraPointListIndex].cameraPoints.Add(CreateCameraPointData(obj));
+                        break;
+                    case BatchImportTarget.SingleSceneObjects:
+                        config.singleSceneObjects.Add(CreateSceneObjectData(obj));
+                        break;
+                    case BatchImportTarget.SceneObjectList:
+                        config.sceneObjectLists[sceneObjectListIndex].sceneObjects.Add(CreateSceneObjectData(obj));
+                        break;
+                }
+            }
+        }
+
+        private void EnsureCameraPointListExists(ConfigToolData config)
+        {
+            if (config.cameraPointLists.Count == 0)
+            {
+                config.cameraPointLists.Add(new CameraPointListData("ImportedCameraPoints", "批量导入的相机点位"));
+                cameraPointListIndex = 0;
+            }
+
+            cameraPointListIndex = Mathf.Clamp(cameraPointListIndex, 0, config.cameraPointLists.Count - 1);
+        }
+
+        private void EnsureSceneObjectListExists(ConfigToolData config)
+        {
+            if (config.sceneObjectLists.Count == 0)
+            {
+                config.sceneObjectLists.Add(new SceneObjectListData("ImportedObjects", "批量导入的物体"));
+                sceneObjectListIndex = 0;
+            }
+
+            sceneObjectListIndex = Mathf.Clamp(sceneObjectListIndex, 0, config.sceneObjectLists.Count - 1);
+        }
+
+        private CameraPointData CreateCameraPointData(GameObject obj)
+        {
+            Vector3 targetPosition = obj.transform.position + obj.transform.forward;
+            Camera camera = obj.GetComponent<Camera>();
+            if (camera != null)
+            {
+                targetPosition = obj.transform.position + obj.transform.forward * Mathf.Max(camera.farClipPlane * 0.1f, 1f);
+            }
+
+            return new CameraPointData(obj.name, obj.transform.position, targetPosition);
+        }
+
+        private SceneObjectData CreateSceneObjectData(GameObject obj)
+        {
+            return new SceneObjectData(obj, GenerateObjectId(obj));
+        }
+
         private enum ImportMode
         {
             ByNameFilter,
-            ByParentObject,
-            ByComponent
+            ByParentObject
         }
 
-        private enum ObjectReferenceType
+        private enum BatchImportTarget
         {
-            ByReference,
-            ByName,
-            ByID
+            [InspectorName("相机点位")]
+            SingleCameraPoints,
+            [InspectorName("相机点位列表")]
+            CameraPointList,
+            [InspectorName("场景物体")]
+            SingleSceneObjects,
+            [InspectorName("场景物体列表")]
+            SceneObjectList
         }
     }
 }

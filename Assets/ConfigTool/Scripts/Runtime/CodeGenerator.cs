@@ -113,6 +113,19 @@ namespace ConfigTool
                 sb.AppendLine($"        public List<{listClassName}ObjectData> {fieldName} = new List<{listClassName}ObjectData>();");
             }
 
+            foreach (var model in config.customModels)
+            {
+                string modelClassName = GetSafeClassName(model.modelName);
+                string fieldName = GetSafeFieldName(model.modelName);
+                sb.AppendLine();
+                sb.AppendLine("        [Serializable]");
+                sb.AppendLine($"        public class {modelClassName}");
+                sb.AppendLine("        {");
+                GenerateCustomFields(model.fields, sb, 12);
+                sb.AppendLine("        }");
+                sb.AppendLine($"        public List<{modelClassName}> {fieldName} = new List<{modelClassName}>();");
+            }
+
             sb.AppendLine("    }");
             sb.AppendLine();
 
@@ -212,9 +225,49 @@ namespace ConfigTool
             string indent = new string(' ', indentSpaces);
             foreach (var field in fields)
             {
-                string typeName = field.fieldType == FieldType.String ? "string" : "int";
-                string defaultValue = field.fieldType == FieldType.String ? "\"\"" : "0";
-                sb.AppendLine($"{indent}public {typeName} {GetSafeFieldName(field.fieldName)} = {defaultValue};");
+                sb.AppendLine($"{indent}public {GetFieldTypeName(field.fieldType)} {GetSafeFieldName(field.fieldName)} = {GetFieldDefaultValue(field.fieldType)};");
+            }
+        }
+
+        private static string GetFieldTypeName(FieldType fieldType)
+        {
+            switch (fieldType)
+            {
+                case FieldType.String:
+                    return "string";
+                case FieldType.Int:
+                    return "int";
+                case FieldType.Bool:
+                    return "bool";
+                case FieldType.Vector3:
+                    return "Vector3";
+                case FieldType.GameObject:
+                    return "GameObject";
+                case FieldType.Model:
+                    return "object";
+                default:
+                    return "string";
+            }
+        }
+
+        private static string GetFieldDefaultValue(FieldType fieldType)
+        {
+            switch (fieldType)
+            {
+                case FieldType.String:
+                    return "\"\"";
+                case FieldType.Int:
+                    return "0";
+                case FieldType.Bool:
+                    return "false";
+                case FieldType.Vector3:
+                    return "Vector3.zero";
+                case FieldType.GameObject:
+                    return "null";
+                case FieldType.Model:
+                    return "null";
+                default:
+                    return "\"\"";
             }
         }
 

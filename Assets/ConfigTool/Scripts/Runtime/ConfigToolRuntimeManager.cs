@@ -12,18 +12,22 @@ namespace ConfigTool
         public string stringValue;
         public int intValue;
         public bool boolValue;
+        public Vector3 vector3Value;
+        public GameObject gameObjectValue;
 
         public SerializedCustomField()
         {
         }
 
-        public SerializedCustomField(string name, FieldType type, string strValue = "", int intValue = 0, bool boolValue = false)
+        public SerializedCustomField(string name, FieldType type, string strValue = "", int intValue = 0, bool boolValue = false, Vector3 vector3Value = default, GameObject gameObjectValue = null)
         {
             fieldName = name;
             fieldType = type;
             stringValue = strValue;
             this.intValue = intValue;
             this.boolValue = boolValue;
+            this.vector3Value = vector3Value;
+            this.gameObjectValue = gameObjectValue;
         }
 
         public object GetValue()
@@ -36,6 +40,10 @@ namespace ConfigTool
                     return intValue;
                 case FieldType.Bool:
                     return boolValue;
+                case FieldType.Vector3:
+                    return vector3Value;
+                case FieldType.GameObject:
+                    return gameObjectValue;
                 default:
                     return null;
             }
@@ -54,6 +62,14 @@ namespace ConfigTool
             else if (fieldType == FieldType.Bool && value is bool boolVal)
             {
                 boolValue = boolVal;
+            }
+            else if (fieldType == FieldType.Vector3 && value is Vector3 vector3Val)
+            {
+                vector3Value = vector3Val;
+            }
+            else if (fieldType == FieldType.GameObject && value is GameObject gameObjectVal)
+            {
+                gameObjectValue = gameObjectVal;
             }
         }
     }
@@ -141,6 +157,10 @@ namespace ConfigTool
                 return (T)(object)field.intValue;
             if (typeof(T) == typeof(bool))
                 return (T)(object)field.boolValue;
+            if (typeof(T) == typeof(Vector3))
+                return (T)(object)field.vector3Value;
+            if (typeof(T) == typeof(GameObject))
+                return (T)(object)field.gameObjectValue;
 
             return default(T);
         }
@@ -177,6 +197,10 @@ namespace ConfigTool
                 return (T)(object)field.intValue;
             if (typeof(T) == typeof(bool))
                 return (T)(object)field.boolValue;
+            if (typeof(T) == typeof(Vector3))
+                return (T)(object)field.vector3Value;
+            if (typeof(T) == typeof(GameObject))
+                return (T)(object)field.gameObjectValue;
 
             return default(T);
         }
@@ -226,7 +250,9 @@ namespace ConfigTool
                         field.fieldType,
                         field.stringValue,
                         field.intValue,
-                        field.boolValue
+                        field.boolValue,
+                        field.vector3Value,
+                        field.gameObjectValue
                     ));
                 }
 
@@ -257,7 +283,9 @@ namespace ConfigTool
                         field.fieldType,
                         field.stringValue,
                         field.intValue,
-                        field.boolValue
+                        field.boolValue,
+                        field.vector3Value,
+                        field.gameObjectValue
                     ));
                 }
 
