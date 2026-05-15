@@ -5,100 +5,13 @@ namespace ConfigTool
 {
     public class GeneratedConfigBuffer : MonoBehaviour
     {
-        public List<CameraPointData> singleCameraPoints = new List<CameraPointData>();
-        public List<CameraPointListData> cameraPointLists = new List<CameraPointListData>();
-        public List<SceneObjectData> singleSceneObjects = new List<SceneObjectData>();
-        public List<SceneObjectListData> sceneObjectLists = new List<SceneObjectListData>();
         public List<CustomModelData> customModels = new List<CustomModelData>();
         public List<CustomConfigData> singleCustomConfigs = new List<CustomConfigData>();
-        public List<CustomConfigListData> customConfigLists = new List<CustomConfigListData>();
 
         public void Capture(ConfigToolData config)
         {
-            singleCameraPoints = CopyCameraPoints(config.singleCameraPoints);
-            cameraPointLists = CopyCameraPointLists(config.cameraPointLists);
-            singleSceneObjects = CopySceneObjects(config.singleSceneObjects);
-            sceneObjectLists = CopySceneObjectLists(config.sceneObjectLists);
             customModels = CopyCustomModels(config.customModels);
             singleCustomConfigs = CopyCustomConfigs(config.singleCustomConfigs);
-            customConfigLists = CopyCustomConfigLists(config.customConfigLists);
-        }
-
-        private static List<CameraPointData> CopyCameraPoints(IEnumerable<CameraPointData> source)
-        {
-            var result = new List<CameraPointData>();
-            foreach (CameraPointData point in source)
-            {
-                if (point == null)
-                {
-                    continue;
-                }
-
-                var copy = new CameraPointData(point.pointName, point.position, point.targetPosition)
-                {
-                    customFields = CopyCustomFields(point.customFields)
-                };
-                result.Add(copy);
-            }
-            return result;
-        }
-
-        private static List<CameraPointListData> CopyCameraPointLists(IEnumerable<CameraPointListData> source)
-        {
-            var result = new List<CameraPointListData>();
-            foreach (CameraPointListData list in source)
-            {
-                if (list == null)
-                {
-                    continue;
-                }
-
-                var copy = new CameraPointListData(list.listName, list.listDescription)
-                {
-                    cameraPoints = CopyCameraPoints(list.cameraPoints)
-                };
-                result.Add(copy);
-            }
-            return result;
-        }
-
-        private static List<SceneObjectData> CopySceneObjects(IEnumerable<SceneObjectData> source)
-        {
-            var result = new List<SceneObjectData>();
-            foreach (SceneObjectData sceneObject in source)
-            {
-                if (sceneObject == null)
-                {
-                    continue;
-                }
-
-                var copy = new SceneObjectData(sceneObject.referenceObject, sceneObject.objectId)
-                {
-                    objectName = sceneObject.objectName,
-                    customFields = CopyCustomFields(sceneObject.customFields)
-                };
-                result.Add(copy);
-            }
-            return result;
-        }
-
-        private static List<SceneObjectListData> CopySceneObjectLists(IEnumerable<SceneObjectListData> source)
-        {
-            var result = new List<SceneObjectListData>();
-            foreach (SceneObjectListData list in source)
-            {
-                if (list == null)
-                {
-                    continue;
-                }
-
-                var copy = new SceneObjectListData(list.listName, list.listDescription)
-                {
-                    sceneObjects = CopySceneObjects(list.sceneObjects)
-                };
-                result.Add(copy);
-            }
-            return result;
         }
 
         private static List<CustomModelData> CopyCustomModels(IEnumerable<CustomModelData> source)
@@ -136,28 +49,31 @@ namespace ConfigTool
                 {
                     configName = config.configName,
                     modelTypeName = config.modelTypeName,
-                    value = CopyModelInstance(config.value)
+                    value = CopyModelInstance(config.value),
+                    entries = CopyCustomConfigEntries(config.entries)
                 });
             }
             return result;
         }
 
-        private static List<CustomConfigListData> CopyCustomConfigLists(IEnumerable<CustomConfigListData> source)
+        private static List<CustomConfigEntryData> CopyCustomConfigEntries(IEnumerable<CustomConfigEntryData> source)
         {
-            var result = new List<CustomConfigListData>();
-            foreach (CustomConfigListData list in source)
+            var result = new List<CustomConfigEntryData>();
+            foreach (CustomConfigEntryData entry in source)
             {
-                if (list == null)
+                if (entry == null)
                 {
                     continue;
                 }
 
-                result.Add(new CustomConfigListData
+                result.Add(new CustomConfigEntryData
                 {
-                    listName = list.listName,
-                    listDescription = list.listDescription,
-                    modelTypeName = list.modelTypeName,
-                    configs = CopyCustomConfigs(list.configs)
+                    entryName = entry.entryName,
+                    scriptParameterName = entry.scriptParameterName,
+                    entryKind = entry.entryKind,
+                    modelTypeName = entry.modelTypeName,
+                    value = CopyModelInstance(entry.value),
+                    configs = CopyCustomConfigs(entry.configs)
                 });
             }
             return result;
@@ -185,9 +101,12 @@ namespace ConfigTool
                 {
                     stringValue = field.stringValue,
                     intValue = field.intValue,
+                    floatValue = field.floatValue,
                     boolValue = field.boolValue,
                     vector3Value = field.vector3Value,
                     gameObjectValue = field.gameObjectValue,
+                    materialValue = field.materialValue,
+                    textureValue = field.textureValue,
                     modelTypeName = field.modelTypeName,
                     modelValue = CopyModelInstance(field.modelValue)
                 };

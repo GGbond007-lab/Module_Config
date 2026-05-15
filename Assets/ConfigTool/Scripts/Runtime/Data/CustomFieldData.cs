@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,9 +11,12 @@ namespace ConfigTool
         public FieldType fieldType;
         public string stringValue;
         public int intValue;
+        public float floatValue;
         public bool boolValue;
         public Vector3 vector3Value;
         public GameObject gameObjectValue;
+        public Material materialValue;
+        public Texture textureValue;
         public string modelTypeName;
         public CustomModelInstanceData modelValue;
 
@@ -23,9 +26,12 @@ namespace ConfigTool
             fieldType = FieldType.String;
             stringValue = "";
             intValue = 0;
+            floatValue = 0f;
             boolValue = false;
             vector3Value = Vector3.zero;
             gameObjectValue = null;
+            materialValue = null;
+            textureValue = null;
             modelTypeName = "";
             modelValue = new CustomModelInstanceData();
         }
@@ -36,32 +42,14 @@ namespace ConfigTool
             fieldType = type;
             stringValue = "";
             intValue = 0;
+            floatValue = 0f;
             boolValue = false;
             vector3Value = Vector3.zero;
             gameObjectValue = null;
+            materialValue = null;
+            textureValue = null;
             modelTypeName = "";
             modelValue = new CustomModelInstanceData();
-        }
-
-        public object GetValue()
-        {
-            switch (fieldType)
-            {
-                case FieldType.String:
-                    return stringValue;
-                case FieldType.Int:
-                    return intValue;
-                case FieldType.Bool:
-                    return boolValue;
-                case FieldType.Vector3:
-                    return vector3Value;
-                case FieldType.GameObject:
-                    return gameObjectValue;
-                case FieldType.Model:
-                    return modelValue;
-                default:
-                    return null;
-            }
         }
     }
 
@@ -69,9 +57,12 @@ namespace ConfigTool
     {
         String,
         Int,
+        Float,
         Bool,
         Vector3,
         GameObject,
+        Material,
+        Texture,
         Model
     }
 
@@ -81,28 +72,30 @@ namespace ConfigTool
         public string configName;
         public string modelTypeName;
         public CustomModelInstanceData value = new CustomModelInstanceData();
+        public List<CustomConfigEntryData> entries = new List<CustomConfigEntryData>();
 
         public CustomConfigData()
         {
-            configName = "NewConfig";
+            configName = "";
             modelTypeName = "";
         }
     }
 
     [Serializable]
-    public class CustomConfigListData
+    public class CustomConfigEntryData
     {
-        public string listName;
-        public string listDescription;
+        public string entryName;
+        public string scriptParameterName;
+        public CustomConfigEntryKind entryKind;
         public string modelTypeName;
+        public CustomModelInstanceData value = new CustomModelInstanceData();
         public List<CustomConfigData> configs = new List<CustomConfigData>();
+    }
 
-        public CustomConfigListData()
-        {
-            listName = "NewConfigList";
-            listDescription = "";
-            modelTypeName = "";
-        }
+    public enum CustomConfigEntryKind
+    {
+        Model,
+        ModelList
     }
 
     [Serializable]

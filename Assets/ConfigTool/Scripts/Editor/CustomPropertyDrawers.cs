@@ -3,182 +3,148 @@ using UnityEditor;
 
 namespace ConfigTool.Editor
 {
-    [CustomPropertyDrawer(typeof(CustomFieldData))]
-    public class CustomFieldDataDrawer : PropertyDrawer
-    {
-        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
-        {
-            EditorGUI.BeginProperty(position, label, property);
-
-            float originalWidth = EditorGUIUtility.labelWidth;
-            EditorGUIUtility.labelWidth = 80;
-
-            Rect fieldNameRect = new Rect(position.x, position.y, 120, position.height);
-            Rect typeRect = new Rect(position.x + 125, position.y, 70, position.height);
-            Rect valueRect = new Rect(position.x + 200, position.y, position.width - 220, position.height);
-
-            var fieldNameProp = property.FindPropertyRelative("fieldName");
-            var fieldTypeProp = property.FindPropertyRelative("fieldType");
-            var stringValueProp = property.FindPropertyRelative("stringValue");
-            var intValueProp = property.FindPropertyRelative("intValue");
-            var boolValueProp = property.FindPropertyRelative("boolValue");
-            var vector3ValueProp = property.FindPropertyRelative("vector3Value");
-            var gameObjectValueProp = property.FindPropertyRelative("gameObjectValue");
-            var modelTypeNameProp = property.FindPropertyRelative("modelTypeName");
-
-            EditorGUI.PropertyField(fieldNameRect, fieldNameProp, GUIContent.none);
-            EditorGUI.PropertyField(typeRect, fieldTypeProp, GUIContent.none);
-
-            FieldType fieldType = (FieldType)fieldTypeProp.enumValueIndex;
-
-            EditorGUI.BeginChangeCheck();
-            if (fieldType == FieldType.String)
-            {
-                EditorGUI.PropertyField(valueRect, stringValueProp, GUIContent.none);
-            }
-            else if (fieldType == FieldType.Int)
-            {
-                EditorGUI.PropertyField(valueRect, intValueProp, GUIContent.none);
-            }
-            else if (fieldType == FieldType.Bool)
-            {
-                EditorGUI.PropertyField(valueRect, boolValueProp, GUIContent.none);
-            }
-            else if (fieldType == FieldType.Vector3)
-            {
-                EditorGUI.PropertyField(valueRect, vector3ValueProp, GUIContent.none);
-            }
-            else if (fieldType == FieldType.GameObject)
-            {
-                EditorGUI.PropertyField(valueRect, gameObjectValueProp, GUIContent.none);
-            }
-            else if (fieldType == FieldType.Model)
-            {
-                EditorGUI.PropertyField(valueRect, modelTypeNameProp, GUIContent.none);
-            }
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                EditorUtility.SetDirty(property.serializedObject.targetObject);
-            }
-
-            EditorGUIUtility.labelWidth = originalWidth;
-            EditorGUI.EndProperty();
-        }
-    }
-
-    [CustomPropertyDrawer(typeof(CameraPointData))]
-    public class CameraPointDataDrawer : PropertyDrawer
-    {
-        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
-        {
-            EditorGUI.BeginProperty(position, label, property);
-
-            Rect foldoutRect = new Rect(position.x, position.y, position.width, EditorGUIUtility.singleLineHeight);
-            property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName);
-
-            if (property.isExpanded)
-            {
-                EditorGUI.indentLevel++;
-                float yOffset = EditorGUIUtility.singleLineHeight + 2;
-
-                var pointNameProp = property.FindPropertyRelative("pointName");
-                var positionProp = property.FindPropertyRelative("position");
-                var targetPositionProp = property.FindPropertyRelative("targetPosition");
-                var customFieldsProp = property.FindPropertyRelative("customFields");
-
-                Rect nameRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(nameRect, pointNameProp);
-                yOffset += EditorGUIUtility.singleLineHeight + 2;
-
-                Rect posRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(posRect, positionProp);
-                yOffset += EditorGUIUtility.singleLineHeight + 2;
-
-                Rect targetPosRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(targetPosRect, targetPositionProp);
-                yOffset += EditorGUIUtility.singleLineHeight + 2;
-
-                Rect fieldsRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(fieldsRect, customFieldsProp);
-
-                EditorGUI.indentLevel--;
-            }
-
-            EditorGUI.EndProperty();
-        }
-
-        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
-        {
-            if (property.isExpanded)
-            {
-                return EditorGUIUtility.singleLineHeight * 4 + 20 + EditorGUI.GetPropertyHeight(property.FindPropertyRelative("customFields"));
-            }
-            return EditorGUIUtility.singleLineHeight;
-        }
-    }
-
-    [CustomPropertyDrawer(typeof(SceneObjectData))]
-    public class SceneObjectDataDrawer : PropertyDrawer
-    {
-        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
-        {
-            EditorGUI.BeginProperty(position, label, property);
-
-            Rect foldoutRect = new Rect(position.x, position.y, position.width, EditorGUIUtility.singleLineHeight);
-            property.isExpanded = EditorGUI.Foldout(foldoutRect, property.isExpanded, property.displayName);
-
-            if (property.isExpanded)
-            {
-                EditorGUI.indentLevel++;
-                float yOffset = EditorGUIUtility.singleLineHeight + 2;
-
-                var objectNameProp = property.FindPropertyRelative("objectName");
-                var objectIdProp = property.FindPropertyRelative("objectId");
-                var referenceObjectProp = property.FindPropertyRelative("referenceObject");
-                var customFieldsProp = property.FindPropertyRelative("customFields");
-
-                Rect nameRect = new Rect(position.x, position.y + yOffset, position.width / 2 - 5, EditorGUIUtility.singleLineHeight);
-                Rect idRect = new Rect(position.x + position.width / 2 + 5, position.y + yOffset, position.width / 2 - 5, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(nameRect, objectNameProp);
-                EditorGUI.PropertyField(idRect, objectIdProp);
-                yOffset += EditorGUIUtility.singleLineHeight + 2;
-
-                Rect refRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(refRect, referenceObjectProp);
-                yOffset += EditorGUIUtility.singleLineHeight + 2;
-
-                Rect fieldsRect = new Rect(position.x, position.y + yOffset, position.width, EditorGUIUtility.singleLineHeight);
-                EditorGUI.PropertyField(fieldsRect, customFieldsProp);
-
-                EditorGUI.indentLevel--;
-            }
-
-            EditorGUI.EndProperty();
-        }
-
-        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
-        {
-            if (property.isExpanded)
-            {
-                return EditorGUIUtility.singleLineHeight * 4 + 20 + EditorGUI.GetPropertyHeight(property.FindPropertyRelative("customFields"));
-            }
-            return EditorGUIUtility.singleLineHeight;
-        }
-    }
-
     [CustomEditor(typeof(ConfigToolData))]
     public class ConfigToolDataEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
+            serializedObject.Update();
+            EditorGUILayout.LabelField("配置内容", EditorStyles.boldLabel);
+            SerializedProperty configsProp = serializedObject.FindProperty("singleCustomConfigs");
+            if (configsProp.arraySize == 0)
+            {
+                EditorGUILayout.HelpBox("当前没有通过配置编辑器顶部 + 添加的配置。", MessageType.Info);
+            }
+            else
+            {
+                DrawConfigList(configsProp);
+            }
+
+            serializedObject.ApplyModifiedProperties();
 
             if (GUILayout.Button("在配置编辑器中打开", GUILayout.Height(30)))
             {
                 ConfigToolEditor.ShowWindow();
                 Selection.activeObject = target;
             }
+        }
+
+        private void DrawConfigList(SerializedProperty configsProp)
+        {
+            for (int i = 0; i < configsProp.arraySize; i++)
+            {
+                SerializedProperty configProp = configsProp.GetArrayElementAtIndex(i);
+                SerializedProperty configNameProp = configProp.FindPropertyRelative("configName");
+                EditorGUILayout.BeginVertical("box");
+                string configName = string.IsNullOrEmpty(configNameProp.stringValue) ? "未命名配置" : configNameProp.stringValue;
+                Rect titleRect = GUILayoutUtility.GetRect(0f, EditorGUIUtility.singleLineHeight, GUILayout.ExpandWidth(true));
+                configProp.isExpanded = EditorGUI.Foldout(titleRect, configProp.isExpanded, GUIContent.none, true);
+                GUIStyle centeredTitleStyle = new GUIStyle(EditorStyles.boldLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter
+                };
+                EditorGUI.LabelField(titleRect, configName, centeredTitleStyle);
+                if (configProp.isExpanded)
+                {
+                    DrawConfigEntries(configProp.FindPropertyRelative("entries"));
+                }
+                EditorGUILayout.EndVertical();
+            }
+        }
+
+        private void DrawConfigEntries(SerializedProperty entriesProp)
+        {
+            if (entriesProp.arraySize == 0)
+            {
+                EditorGUILayout.HelpBox("当前配置没有 Model 或 Model 列表。", MessageType.Info);
+                return;
+            }
+
+            EditorGUI.indentLevel++;
+            for (int i = 0; i < entriesProp.arraySize; i++)
+            {
+                SerializedProperty entryProp = entriesProp.GetArrayElementAtIndex(i);
+                SerializedProperty entryNameProp = entryProp.FindPropertyRelative("entryName");
+                SerializedProperty entryKindProp = entryProp.FindPropertyRelative("entryKind");
+                SerializedProperty modelTypeNameProp = entryProp.FindPropertyRelative("modelTypeName");
+                string entryName = string.IsNullOrEmpty(entryNameProp.stringValue) ? modelTypeNameProp.stringValue : entryNameProp.stringValue;
+                string kindName = entryKindProp.enumValueIndex == (int)CustomConfigEntryKind.ModelList ? "Model 列表" : "Model";
+
+                EditorGUILayout.BeginVertical("box");
+                entryProp.isExpanded = EditorGUILayout.Foldout(entryProp.isExpanded, $"{entryName} ({kindName})", true);
+                if (entryProp.isExpanded)
+                {
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        EditorGUILayout.PropertyField(modelTypeNameProp, new GUIContent("Model"));
+                    }
+
+                    if (entryKindProp.enumValueIndex == (int)CustomConfigEntryKind.Model)
+                    {
+                        DrawModelStructure(entryProp.FindPropertyRelative("value"));
+                    }
+                    else
+                    {
+                        DrawModelList(entryProp.FindPropertyRelative("configs"));
+                    }
+                }
+                EditorGUILayout.EndVertical();
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        private void DrawModelList(SerializedProperty configsProp)
+        {
+            EditorGUILayout.LabelField($"列表项: {configsProp.arraySize}");
+            EditorGUI.indentLevel++;
+            for (int i = 0; i < configsProp.arraySize; i++)
+            {
+                SerializedProperty configProp = configsProp.GetArrayElementAtIndex(i);
+                SerializedProperty configNameProp = configProp.FindPropertyRelative("configName");
+                string itemName = string.IsNullOrEmpty(configNameProp.stringValue) ? $"列表项 {i + 1}" : configNameProp.stringValue;
+
+                EditorGUILayout.BeginVertical("box");
+                configProp.isExpanded = EditorGUILayout.Foldout(configProp.isExpanded, itemName, true);
+                if (configProp.isExpanded)
+                {
+                    DrawModelStructure(configProp.FindPropertyRelative("value"));
+                }
+                EditorGUILayout.EndVertical();
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        private void DrawModelStructure(SerializedProperty instanceProp)
+        {
+            SerializedProperty fieldsProp = instanceProp.FindPropertyRelative("fields");
+            if (fieldsProp.arraySize == 0)
+            {
+                EditorGUILayout.HelpBox("当前 Model 没有字段。", MessageType.Info);
+                return;
+            }
+
+            EditorGUI.indentLevel++;
+            for (int i = 0; i < fieldsProp.arraySize; i++)
+            {
+                SerializedProperty fieldProp = fieldsProp.GetArrayElementAtIndex(i);
+                SerializedProperty fieldNameProp = fieldProp.FindPropertyRelative("fieldName");
+                SerializedProperty fieldTypeProp = fieldProp.FindPropertyRelative("fieldType");
+                FieldType fieldType = (FieldType)fieldTypeProp.enumValueIndex;
+                if (fieldType == FieldType.Model)
+                {
+                    string modelTypeName = fieldProp.FindPropertyRelative("modelTypeName").stringValue;
+                    fieldProp.isExpanded = EditorGUILayout.Foldout(fieldProp.isExpanded, $"{fieldNameProp.stringValue}: {modelTypeName}", true);
+                    if (fieldProp.isExpanded)
+                    {
+                        DrawModelStructure(fieldProp.FindPropertyRelative("modelValue"));
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.LabelField(fieldNameProp.stringValue, fieldType.ToString());
+                }
+            }
+            EditorGUI.indentLevel--;
         }
     }
 }
