@@ -107,6 +107,7 @@ namespace ConfigTool
                     gameObjectValue = field.gameObjectValue,
                     materialValue = field.materialValue,
                     textureValue = field.textureValue,
+                    sourceTypeName = field.sourceTypeName,
                     modelTypeName = field.modelTypeName,
                     modelValue = CopyModelInstance(field.modelValue)
                 };

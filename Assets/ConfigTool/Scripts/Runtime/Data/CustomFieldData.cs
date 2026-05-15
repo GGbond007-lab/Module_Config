@@ -17,24 +17,9 @@ namespace ConfigTool
         public GameObject gameObjectValue;
         public Material materialValue;
         public Texture textureValue;
+        public string sourceTypeName;
         public string modelTypeName;
         public CustomModelInstanceData modelValue;
-
-        public CustomFieldData()
-        {
-            fieldName = "NewField";
-            fieldType = FieldType.String;
-            stringValue = "";
-            intValue = 0;
-            floatValue = 0f;
-            boolValue = false;
-            vector3Value = Vector3.zero;
-            gameObjectValue = null;
-            materialValue = null;
-            textureValue = null;
-            modelTypeName = "";
-            modelValue = new CustomModelInstanceData();
-        }
 
         public CustomFieldData(string name, FieldType type)
         {
@@ -48,6 +33,7 @@ namespace ConfigTool
             gameObjectValue = null;
             materialValue = null;
             textureValue = null;
+            sourceTypeName = "";
             modelTypeName = "";
             modelValue = new CustomModelInstanceData();
         }

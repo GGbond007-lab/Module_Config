@@ -25,6 +25,7 @@ namespace ConfigTool.Editor
         private string checkedConfigScriptName = "";
         private bool hasCheckedConfigScriptName;
         private Type cachedConfigScriptType;
+        private bool lockedScriptParameterNames;
         private List<Component> cachedConfigComponents = new List<Component>();
         private bool cachedConfigComponentsSearched;
         private int selectedConfigComponentIndex;
@@ -110,6 +111,7 @@ namespace ConfigTool.Editor
                 batchStates.Clear();
                 singleObjectStates.Clear();
                 scriptEntryFoldouts.Clear();
+                lockedScriptParameterNames = false;
                 ClearCheckedScriptState();
                 if (currentConfig != null)
                 {
@@ -221,7 +223,16 @@ namespace ConfigTool.Editor
                 {
                     EditorGUILayout.TextField("Inspector名字", entry.entryName);
                 }
-                entry.scriptParameterName = EditorGUILayout.TextField("生成脚本参数名称", entry.scriptParameterName);
+                Color originalContentColor = GUI.contentColor;
+                if (lockedScriptParameterNames)
+                {
+                    GUI.contentColor = Color.green;
+                }
+                using (new EditorGUI.DisabledScope(lockedScriptParameterNames))
+                {
+                    entry.scriptParameterName = EditorGUILayout.TextField("生成脚本参数名称", entry.scriptParameterName);
+                }
+                GUI.contentColor = originalContentColor;
                 using (new EditorGUI.DisabledScope(true))
                 {
                     EditorGUILayout.TextField("Model", entry.modelTypeName);
@@ -322,7 +333,7 @@ namespace ConfigTool.Editor
                     continue;
                 }
 
-                List<PropertyOption> options = state.propertyOptions.Where(option => IsPropertyCompatible(field.fieldType, option.valueType)).ToList();
+                List<PropertyOption> options = state.propertyOptions.Where(option => IsPropertyCompatible(GetCustomFieldRuntimeType(field), option.valueType)).ToList();
                 options.Insert(0, PropertyOption.KeepUnchanged);
 
                 if (!state.selectedPropertyByField.TryGetValue(field.fieldName, out int selectedIndex))
@@ -518,7 +529,7 @@ namespace ConfigTool.Editor
             CustomModelInstanceData template = entry.configs.FirstOrDefault()?.value ?? CreateModelInstance(entry.modelTypeName);
             foreach (CustomFieldData field in template.fields)
             {
-                List<PropertyOption> options = state.propertyOptions.Where(option => IsPropertyCompatible(field.fieldType, option.valueType)).ToList();
+                List<PropertyOption> options = state.propertyOptions.Where(option => IsPropertyCompatible(GetCustomFieldRuntimeType(field), option.valueType)).ToList();
                 options.Insert(0, PropertyOption.KeepUnchanged);
 
                 if (!state.selectedPropertyByField.TryGetValue(field.fieldName, out int selectedIndex))
@@ -620,7 +631,7 @@ namespace ConfigTool.Editor
                 Type componentType = component.GetType();
                 foreach (PropertyInfo property in componentType.GetProperties(BindingFlags.Instance | BindingFlags.Public))
                 {
-                    if (!property.CanRead || property.GetIndexParameters().Length > 0 || !IsSupportedValueType(property.PropertyType))
+                    if (!property.CanRead || property.GetIndexParameters().Length > 0)
                     {
                         continue;
                     }
@@ -635,11 +646,6 @@ namespace ConfigTool.Editor
 
                 foreach (FieldInfo field in componentType.GetFields(BindingFlags.Instance | BindingFlags.Public))
                 {
-                    if (!IsSupportedValueType(field.FieldType))
-                    {
-                        continue;
-                    }
-
                     string key = componentType.FullName + "/" + field.Name;
                     options.Add(new PropertyOption(key, componentType.Name + "." + field.Name, field.FieldType, target =>
                     {
@@ -652,31 +658,38 @@ namespace ConfigTool.Editor
             return options.GroupBy(option => option.key).Select(group => group.First()).ToList();
         }
 
-        private bool IsSupportedValueType(Type type)
+        private static bool IsPropertyCompatible(Type fieldType, Type valueType)
         {
-            return type == typeof(string)
-                || type == typeof(int)
-                || type == typeof(float)
-                || type == typeof(bool)
-                || type == typeof(Vector3)
-                || typeof(GameObject).IsAssignableFrom(type)
-                || typeof(Material).IsAssignableFrom(type)
-                || typeof(Texture).IsAssignableFrom(type);
+            if (fieldType == null || valueType == null)
+            {
+                return false;
+            }
+
+            return fieldType.IsAssignableFrom(valueType) || valueType.IsAssignableFrom(fieldType);
         }
 
-        private bool IsPropertyCompatible(FieldType fieldType, Type valueType)
+        private static Type GetCustomFieldRuntimeType(CustomFieldData field)
         {
-            switch (fieldType)
+            if (!string.IsNullOrEmpty(field.sourceTypeName))
             {
-                case FieldType.String: return valueType == typeof(string);
-                case FieldType.Int: return valueType == typeof(int);
-                case FieldType.Float: return valueType == typeof(float);
-                case FieldType.Bool: return valueType == typeof(bool);
-                case FieldType.Vector3: return valueType == typeof(Vector3);
-                case FieldType.GameObject: return typeof(GameObject).IsAssignableFrom(valueType);
-                case FieldType.Material: return typeof(Material).IsAssignableFrom(valueType);
-                case FieldType.Texture: return typeof(Texture).IsAssignableFrom(valueType);
-                default: return false;
+                Type sourceType = Type.GetType(field.sourceTypeName);
+                if (sourceType != null)
+                {
+                    return sourceType;
+                }
+            }
+
+            switch (field.fieldType)
+            {
+                case FieldType.String: return typeof(string);
+                case FieldType.Int: return typeof(int);
+                case FieldType.Float: return typeof(float);
+                case FieldType.Bool: return typeof(bool);
+                case FieldType.Vector3: return typeof(Vector3);
+                case FieldType.GameObject: return typeof(GameObject);
+                case FieldType.Material: return typeof(Material);
+                case FieldType.Texture: return typeof(Texture);
+                default: return null;
             }
         }
 
@@ -753,6 +766,8 @@ namespace ConfigTool.Editor
                     break;
                 case FieldType.Texture:
                     field.textureValue = value as Texture;
+                    break;
+                case FieldType.Model:
                     break;
             }
         }
@@ -1050,6 +1065,8 @@ namespace ConfigTool.Editor
             window.checkedConfigScriptName = window.configScriptName;
             window.hasCheckedConfigScriptName = true;
             window.cachedConfigScriptType = component.GetType();
+            window.lockedScriptParameterNames = true;
+            window.ApplyExistingScriptFieldNames(component.GetType());
             window.cachedConfigComponents = new List<Component> { component };
             window.cachedConfigComponentsSearched = true;
             window.selectedConfigComponentIndex = 0;
@@ -1076,7 +1093,51 @@ namespace ConfigTool.Editor
             ClearConfigComponentCache();
             cachedConfigScriptType = TypeCache.GetTypesDerivedFrom<Component>()
                 .FirstOrDefault(type => type.Name == checkedConfigScriptName);
+            if (cachedConfigScriptType == null)
+            {
+                lockedScriptParameterNames = false;
+                ClearScriptParameterNames();
+            }
+            else
+            {
+                lockedScriptParameterNames = true;
+                ApplyExistingScriptFieldNames(cachedConfigScriptType);
+            }
             ClearBottomMessage();
+        }
+
+        private void ApplyExistingScriptFieldNames(Type scriptType)
+        {
+            foreach (CustomConfigData config in editingConfig.singleCustomConfigs)
+            {
+                foreach (CustomConfigEntryData entry in config.entries)
+                {
+                    if (TryFindExistingScriptField(scriptType, entry, out FieldInfo field))
+                    {
+                        entry.scriptParameterName = field.Name;
+                    }
+                }
+            }
+        }
+
+        private bool TryFindExistingScriptField(Type scriptType, CustomConfigEntryData entry, out FieldInfo result)
+        {
+            Type modelType = GetModelRuntimeType(entry.modelTypeName);
+            Type expectedType = entry.entryKind == CustomConfigEntryKind.Model ? modelType : modelType == null ? null : typeof(List<>).MakeGenericType(modelType);
+            result = expectedType == null ? null : scriptType.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(field => field.FieldType == expectedType);
+            return result != null;
+        }
+
+        private void ClearScriptParameterNames()
+        {
+            foreach (CustomConfigData config in editingConfig.singleCustomConfigs)
+            {
+                foreach (CustomConfigEntryData entry in config.entries)
+                {
+                    entry.scriptParameterName = "";
+                }
+            }
         }
 
         private void ClearCheckedScriptState()
@@ -1084,6 +1145,7 @@ namespace ConfigTool.Editor
             checkedConfigScriptName = "";
             hasCheckedConfigScriptName = false;
             cachedConfigScriptType = null;
+            lockedScriptParameterNames = false;
             ClearConfigComponentCache();
         }
 
@@ -1244,9 +1306,9 @@ namespace ConfigTool.Editor
 
                 foreach (CustomFieldData field in model.fields)
                 {
-                    if (!IsValidCSharpIdentifier(GetGeneratedModelFieldName(field)))
+                    if (!IsValidCSharpIdentifier(field.fieldName))
                     {
-                        errorMessage = $"字段名称 {field.fieldName} 不能生成合法字段名。";
+                        errorMessage = $"字段名称 {field.fieldName} 不是合法字段名。";
                         return false;
                     }
                 }
@@ -1476,7 +1538,7 @@ namespace ConfigTool.Editor
             Type targetType = target.GetType();
             foreach (CustomFieldData sourceField in source.fields)
             {
-                FieldInfo targetField = targetType.GetField(GetGeneratedModelFieldName(sourceField), BindingFlags.Instance | BindingFlags.Public);
+                FieldInfo targetField = targetType.GetField(sourceField.fieldName, BindingFlags.Instance | BindingFlags.Public);
                 if (targetField == null)
                 {
                     continue;
@@ -1495,7 +1557,11 @@ namespace ConfigTool.Editor
                 }
                 else
                 {
-                    targetField.SetValue(target, GetCustomFieldValue(sourceField));
+                    object value = GetCustomFieldValue(sourceField);
+                    if (value != null || !targetField.FieldType.IsValueType)
+                    {
+                        targetField.SetValue(target, value);
+                    }
                 }
             }
         }
@@ -1565,7 +1631,7 @@ namespace ConfigTool.Editor
             Type sourceType = source.GetType();
             foreach (CustomFieldData targetField in target.fields)
             {
-                FieldInfo sourceField = sourceType.GetField(GetGeneratedModelFieldName(targetField), BindingFlags.Instance | BindingFlags.Public);
+                FieldInfo sourceField = sourceType.GetField(targetField.fieldName, BindingFlags.Instance | BindingFlags.Public);
                 if (sourceField == null)
                 {
                     continue;
@@ -1616,6 +1682,7 @@ namespace ConfigTool.Editor
             {
                 fields = model == null ? new List<CustomFieldData>() : model.fields.Select(field => new CustomFieldData(field.fieldName, field.fieldType)
                 {
+                    sourceTypeName = field.sourceTypeName,
                     modelTypeName = field.modelTypeName,
                     modelValue = field.fieldType == FieldType.Model ? CreateModelInstance(field.modelTypeName, visited) : new CustomModelInstanceData()
                 }).ToList()
@@ -1658,7 +1725,7 @@ namespace ConfigTool.Editor
             return new CustomConfigEntryData
             {
                 entryName = source.entryName,
-                scriptParameterName = source.scriptParameterName,
+                scriptParameterName = "",
                 entryKind = source.entryKind,
                 modelTypeName = source.modelTypeName,
                 value = source.entryKind == CustomConfigEntryKind.Model ? CreateModelInstance(source.modelTypeName) : new CustomModelInstanceData(),
@@ -1675,6 +1742,7 @@ namespace ConfigTool.Editor
         {
             return new CustomFieldData(source.fieldName, source.fieldType)
             {
+                sourceTypeName = source.sourceTypeName,
                 modelTypeName = source.modelTypeName,
                 modelValue = source.fieldType == FieldType.Model ? CreateModelInstance(source.modelTypeName) : new CustomModelInstanceData()
             };
@@ -1730,11 +1798,6 @@ namespace ConfigTool.Editor
 
             string suffix = entry.entryKind == CustomConfigEntryKind.ModelList ? "List" : "";
             return ToLowerCamelCase(entry.modelTypeName + suffix, "configItem");
-        }
-
-        private static string GetGeneratedModelFieldName(CustomFieldData field)
-        {
-            return ToLowerCamelCase(field.fieldName, "field");
         }
 
         private static string ToLowerCamelCase(string value, string fallback)

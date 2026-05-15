@@ -27,6 +27,9 @@ namespace ConfigTool.Editor
         private List<Type> serializableModelTypes;
         private string modelTypeSearch = "";
         private string serializableModelFolderPath = "Assets/DataModel";
+        private string bottomMessage = "";
+        private bool bottomMessageIsError;
+        private double bottomMessageExpireTime;
 
         [MenuItem("ConfigSetting/配置编辑器")]
         public static void ShowWindow()
@@ -101,7 +104,55 @@ namespace ConfigTool.Editor
             }
 
             EditorGUILayout.EndScrollView();
+            DrawBottomMessage();
             EditorGUILayout.EndVertical();
+        }
+
+        private void DrawBottomMessage()
+        {
+            if (string.IsNullOrEmpty(bottomMessage))
+            {
+                return;
+            }
+
+            if (EditorApplication.timeSinceStartup >= bottomMessageExpireTime)
+            {
+                ClearBottomMessage();
+                return;
+            }
+
+            GUIStyle style = new GUIStyle(EditorStyles.helpBox)
+            {
+                normal = { textColor = bottomMessageIsError ? Color.red : Color.green },
+                fontStyle = FontStyle.Bold,
+                wordWrap = true
+            };
+            EditorGUILayout.LabelField(bottomMessage, style, GUILayout.MinHeight(28));
+            Repaint();
+        }
+
+        private void ShowBottomError(string message)
+        {
+            ShowBottomMessage(message, true);
+        }
+
+        private void ShowBottomSuccess(string message)
+        {
+            ShowBottomMessage(message, false);
+        }
+
+        private void ShowBottomMessage(string message, bool isError)
+        {
+            bottomMessage = message;
+            bottomMessageIsError = isError;
+            bottomMessageExpireTime = EditorApplication.timeSinceStartup + 3d;
+        }
+
+        private void ClearBottomMessage()
+        {
+            bottomMessage = "";
+            bottomMessageIsError = false;
+            bottomMessageExpireTime = 0d;
         }
 
         private void DrawHeader()
@@ -129,7 +180,7 @@ namespace ConfigTool.Editor
                 {
                     EditorUtility.SetDirty(currentConfig);
                     AssetDatabase.SaveAssets();
-                    EditorUtility.DisplayDialog("成功", "配置已保存", "确定");
+                    ShowBottomSuccess("配置已保存。");
                 }
             }
 
@@ -885,6 +936,7 @@ namespace ConfigTool.Editor
         {
             return new CustomFieldData(field.fieldName, field.fieldType)
             {
+                sourceTypeName = field.sourceTypeName,
                 modelTypeName = field.modelTypeName,
                 modelValue = field.fieldType == FieldType.Model ? CreateModelInstance(field.modelTypeName, visited) : new CustomModelInstanceData()
             };
@@ -1140,6 +1192,7 @@ namespace ConfigTool.Editor
         {
             return new CustomFieldData(field.fieldName, field.fieldType)
             {
+                sourceTypeName = field.sourceTypeName,
                 modelTypeName = field.modelTypeName
             };
         }
@@ -1148,40 +1201,41 @@ namespace ConfigTool.Editor
         {
             if (type == typeof(string))
             {
-                return new CustomFieldData(fieldName, FieldType.String);
+                return new CustomFieldData(fieldName, FieldType.String) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(int))
             {
-                return new CustomFieldData(fieldName, FieldType.Int);
+                return new CustomFieldData(fieldName, FieldType.Int) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(float))
             {
-                return new CustomFieldData(fieldName, FieldType.Float);
+                return new CustomFieldData(fieldName, FieldType.Float) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(bool))
             {
-                return new CustomFieldData(fieldName, FieldType.Bool);
+                return new CustomFieldData(fieldName, FieldType.Bool) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(Vector3))
             {
-                return new CustomFieldData(fieldName, FieldType.Vector3);
+                return new CustomFieldData(fieldName, FieldType.Vector3) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(GameObject))
             {
-                return new CustomFieldData(fieldName, FieldType.GameObject);
+                return new CustomFieldData(fieldName, FieldType.GameObject) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(Material))
             {
-                return new CustomFieldData(fieldName, FieldType.Material);
+                return new CustomFieldData(fieldName, FieldType.Material) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type == typeof(Texture))
             {
-                return new CustomFieldData(fieldName, FieldType.Texture);
+                return new CustomFieldData(fieldName, FieldType.Texture) { sourceTypeName = type.AssemblyQualifiedName };
             }
             if (type.IsClass && type.IsSerializable)
             {
                 return new CustomFieldData(fieldName, FieldType.Model)
                 {
+                    sourceTypeName = type.AssemblyQualifiedName,
                     modelTypeName = type.Name
                 };
             }
@@ -1209,5 +1263,123 @@ namespace ConfigTool.Editor
             }
         }
 
+    }
+
+    public class WebLoginConfigWindow : EditorWindow
+    {
+        private const string AccountKey = "ConfigTool.WebLogin.Account";
+        private const string PasswordKey = "ConfigTool.WebLogin.Password";
+        private string account;
+        private string password;
+        private string bottomMessage;
+        private bool bottomMessageIsError;
+        private double bottomMessageExpireTime;
+
+        [MenuItem("ConfigSetting/网页登陆配置/设置账号密码")]
+        public static void ShowWindow()
+        {
+            var window = GetWindow<WebLoginConfigWindow>("网页登陆配置");
+            window.minSize = new Vector2(360, 120);
+            window.LoadSettings();
+        }
+
+        [MenuItem("ConfigSetting/网页登陆配置/复制账号")]
+        public static void CopyAccount()
+        {
+            CopySavedValue(AccountKey, "账号");
+        }
+
+        [MenuItem("ConfigSetting/网页登陆配置/复制密码")]
+        public static void CopyPassword()
+        {
+            CopySavedValue(PasswordKey, "密码");
+        }
+
+        private static void CopySavedValue(string key, string label)
+        {
+            string value = EditorPrefs.GetString(key, "");
+            if (string.IsNullOrEmpty(value))
+            {
+                Debug.LogWarning($"网页登陆配置：还没有保存{label}。");
+                return;
+            }
+
+            GUIUtility.systemCopyBuffer = value;
+            Debug.Log($"网页登陆配置：已复制{label}到剪贴板。");
+        }
+
+        private void OnEnable()
+        {
+            LoadSettings();
+        }
+
+        private void OnGUI()
+        {
+            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.LabelField("网页登陆配置", EditorStyles.boldLabel);
+            account = EditorGUILayout.TextField("账号", account);
+            password = EditorGUILayout.TextField("密码", password);
+            if (GUILayout.Button("保存", GUILayout.Height(28)))
+            {
+                EditorPrefs.SetString(AccountKey, account ?? "");
+                EditorPrefs.SetString(PasswordKey, password ?? "");
+                ShowBottomSuccess("网页登陆账号密码已保存。");
+            }
+            EditorGUILayout.EndVertical();
+            DrawBottomMessage();
+        }
+
+        private void DrawBottomMessage()
+        {
+            if (string.IsNullOrEmpty(bottomMessage))
+            {
+                return;
+            }
+
+            if (EditorApplication.timeSinceStartup >= bottomMessageExpireTime)
+            {
+                ClearBottomMessage();
+                return;
+            }
+
+            GUIStyle style = new GUIStyle(EditorStyles.helpBox)
+            {
+                normal = { textColor = bottomMessageIsError ? Color.red : Color.green },
+                fontStyle = FontStyle.Bold,
+                wordWrap = true
+            };
+            EditorGUILayout.LabelField(bottomMessage, style, GUILayout.MinHeight(28));
+            Repaint();
+        }
+
+        private void ShowBottomError(string message)
+        {
+            ShowBottomMessage(message, true);
+        }
+
+        private void ShowBottomSuccess(string message)
+        {
+            ShowBottomMessage(message, false);
+        }
+
+        private void ShowBottomMessage(string message, bool isError)
+        {
+            bottomMessage = message;
+            bottomMessageIsError = isError;
+            bottomMessageExpireTime = EditorApplication.timeSinceStartup + 3d;
+        }
+
+        private void ClearBottomMessage()
+        {
+            bottomMessage = "";
+            bottomMessageIsError = false;
+            bottomMessageExpireTime = 0d;
+        }
+
+        private void LoadSettings()
+        {
+            account = EditorPrefs.GetString(AccountKey, "");
+            password = EditorPrefs.GetString(PasswordKey, "");
+        }
     }
 }
